@@ -2,37 +2,42 @@ model InfeccionRedesGIS
 
 species sala {
 	string nombre;
+
+	aspect default {
+		draw shape color: rgb(165, 75, 75, 100) border: #black;
+	}
+
 }
 
 global {
+// Carga de archivos Shapefile
 	file nodos_file <- file("../includes/nodos.shp");
 	file conexiones_file <- file("../includes/conexiones.shp");
 	file salas_file <- file("../includes/sala.shp");
-	geometry shape <- envelope(salas_file);
+
+	// FIX ESPACIAL: El mundo se adapta al nodo más lejano para que quepan los nodos de afuera
+	geometry shape <- envelope(nodos_file);
 	float firewall_strength <- 0.7;
 	int cooldown_min <- 3;
 	int cooldown_max <- 8;
 
 	init {
-
-	// =========================
-	// SALAS
-	// =========================
+	// =====================================================
+	// 1. CARGA DE SALAS
+	// =====================================================
 		create sala from: salas_file {
 			nombre <- string(read("nombre"));
 		}
 
-		// =========================
-		// NODOS (FIX CRÍTICO)
-		// =========================
+		// =====================================================
+		// 2. CARGA DE NODOS
+		// =====================================================
 		create computer from: nodos_file {
-			id <- int(read("id")); // store numeric id as int
+			id <- int(read("id"));
 			nombre <- string(read("nombre"));
 			string tipoNodo <- string(read("tipo"));
 
-			// assign agent location from the shapefile geometry
-			geometry geom <- location;
-			location <- geom;
+			// Configuración de tipos de agentes
 			is_server <- (tipoNodo = "server");
 			is_internet <- (tipoNodo = "internet");
 			is_firewall <- (tipoNodo = "firewall");
@@ -47,51 +52,41 @@ global {
 				open_ports <- [];
 			}
 
-			write "NODE LOADED RAW ID: " + string(id);
-			write "NODE LOC: " + string(location);
+			write "NODO CARGADO -> ID: " + string(id) + " | Nombre: " + nombre + " | Tipo: " + tipoNodo;
 		}
-		// =========================
-		// CONEXIONES (FIX DEFINITIVO)
-		// =========================
-create connection from: conexiones_file {
 
-	int o <- int(read("origen"));
-	int d <- int(read("destino"));
+		// =====================================================
+		// 3. CARGA DE CONEXIONES (Mapeo de Topología)
+		// =====================================================
+		create connection from: conexiones_file {
+			int o <- int(read("origen"));
+			int d <- int(read("destino"));
 
-	list<computer> so <- computer where each.id = o;
-	list<computer> de <- computer where each.id = d;
+			// Buscamos los agentes computadora cuyos IDs coincidan con origen y destino
+			list<computer> so <- computer where (each.id = o);
+			list<computer> de <- computer where (each.id = d);
+			if !empty(so) and !empty(de) {
+				source <- first(so);
+				target <- first(de);
 
-	if !empty(so) and !empty(de) {
-
-		source <- first(so);
-		target <- first(de);
-		// store the raw geometry from the shapefile into the agent
-		geom <- geometry;
-
-		write "LINK OK: " + string(o) + " -> " + string(d);
-		if source != nil {
-			if target != nil {
-				write "  SRC LOC: " + string(source.location) + " | TGT LOC: " + string(target.location);
+				// Conservamos la línea exacta que dibujaste en QGIS
+				geom <- shape;
+				write "CONEXIÓN OK: " + string(o) + " -> " + string(d);
 			} else {
-				write "  SRC LOC: " + string(source.location) + " | TGT LOC: nil";
+				write "CONEXION INVALIDA: " + string(o) + " -> " + string(d) + " (Revisa los IDs en QGIS)";
 			}
-		} else {
-			write "  SRC LOC: nil | TGT LOC: " + (target != nil ? string(target.location) : "nil");
-		}
-	}
-	else {
 
-		write "CONEXION INVALIDA: " + string(o) + " -> " + string(d);
-	}
-}
-		write "Nodos: " + length(computer);
-		write "Links: " + length(connection);
+		}
+
+		write "=== RESUMEN DE CARGA ===";
+		write "Total Nodos cargados: " + length(computer);
+		write "Total Links válidos: " + length(connection);
 	}
 
 }
 
 // =====================================================
-// COMPUTADORAS
+// ESPECIE: COMPUTADORAS / DISPOSITIVOS
 // =====================================================
 species computer {
 	int id;
@@ -114,16 +109,19 @@ species computer {
 
 	}
 
+	// Lógica de propagación de infección
 	reflex spread when: infected {
 		if cooldown > 0 {
 			return;
 		}
 
-		list<connection> outs <- connection where each.source = self;
+		// Buscamos conexiones salientes desde este nodo
+		list<connection> outs <- connection where (each.source = self);
 		if empty(outs) {
 			return;
 		}
 
+		// Seleccionamos una conexión al azar e infectamos al vecino
 		connection c <- one_of(outs);
 		computer target_node <- c.target;
 		float p <- 0.6;
@@ -133,58 +131,63 @@ species computer {
 
 		if flip(p) {
 			target_node.infected <- true;
-			write "INFECTADO: " + target_node.nombre;
+			write "¡ALERTA! El nodo [" + target_node.nombre + "] ha sido INFECTADO por [" + self.nombre + "]";
 		}
 
 		cooldown <- rnd(5) + 2;
 	}
 
+	// Aspecto visual de los nodos en el mapa
 	aspect default {
+	// Reducimos drásticamente el tamaño para que queden proporcionales a tus puntos de QGIS
+		float tam_nodo <- 0.2;
 		if is_firewall {
-			draw square(5000) color: #blue;
+			draw square(tam_nodo) color: #blue;
 		} else if is_switch {
-			draw square(5000) color: #gray;
+			draw square(tam_nodo) color: #gray;
 		} else if is_internet {
-			draw square(5000) color: #yellow;
+			draw square(tam_nodo) color: #yellow;
 		} else if infected {
-			draw circle(5000) color: #red;
+			draw circle(tam_nodo) color: #red;
 		} else {
-			draw circle(5000) color: #green;
+			draw circle(tam_nodo) color: #green;
 		}
 
-		draw string(nombre) at: location + {0, 5};
+		// El texto también lo hacemos diminuto para que no sea un bloque gigante de letras
+		draw string(nombre) at: location + {0, -tam_nodo * 1.5} color: #black font: font("SansSerif", 8, #bold);
 	} }
 
 	// =====================================================
-// CONEXIONES
+// ESPECIE: CONEXIONES (LÍNEAS DE RED)
 // =====================================================
 species connection {
-	computer source;
-	computer target;
-	geometry geom;
+    computer source;
+    computer target;
+    geometry geom;
 
-	aspect default {
-		// Draw connections more visibly for debugging: prefer stored geometry
-		if geom != nil {
-			draw line(geom) color: #red width: 3;
-		} else if source != nil and target != nil {
-			draw line([source.location, target.location]) color: #red width: 3;
-		}
-	}
-
+    aspect default {
+        // Ponemos un width bien bajo (ej: 0.05 o 0.1)
+        if geom != nil {
+            draw geom color: #orange width: 0.09;
+        } else if source != nil and target != nil {
+            draw line([source.location, target.location]) color: #orange width: 0.05;
+        }
+    }
 }
 
 // =====================================================
-// EXPERIMENTO
+// EXPERIMENTO / INTERFAZ GRÁFICA
 // =====================================================
-experiment LAN type: gui {
+experiment Infeccion type: gui {
 	output {
-		display network_display {
-			species connection;
-			species computer;
+		display mapa_red {
+			species sala; // 1° El fondo marrón de la sala
+			species connection; // 2° Los cables naranja
+			species computer; // 3° Los nodos encima (así nada los tapa)
 		}
 
-		monitor "INF" value: length(computer where each.infected);
+		monitor "Equipos Infectados" value: length(computer where each.infected);
+		monitor "Equipos Sanos" value: length(computer where !each.infected);
 	}
 
 }

@@ -42,15 +42,28 @@ global {
 			is_internet <- (tipoNodo = "internet");
 			is_firewall <- (tipoNodo = "firewall");
 			is_switch <- (tipoNodo = "switch");
-			infected <- false;
+			if is_internet {
+    infected <- true;
+}
+else {
+    infected <- false;
+}
 			secured <- false;
 			isolated <- false;
 			patch_level <- rnd(100);
-			if tipoNodo = "pc" or is_server {
-				open_ports <- [445, 3389, 80];
-			} else {
-				open_ports <- [];
-			}
+if tipoNodo = "pc" 
+or is_server 
+or is_switch 
+or is_firewall {
+
+	open_ports <- [445,3389,80];
+
+}
+else {
+
+	open_ports <- [];
+
+}
 
 			write "NODO CARGADO -> ID: " + string(id) + " | Nombre: " + nombre + " | Tipo: " + tipoNodo;
 		}
@@ -116,15 +129,33 @@ species computer {
 		}
 
 		// Buscamos conexiones salientes desde este nodo
-		list<connection> outs <- connection where (each.source = self);
+		list<connection> outs <- connection where 
+(each.source = self or each.target = self);
 		if empty(outs) {
 			return;
 		}
 
 		// Seleccionamos una conexión al azar e infectamos al vecino
 		connection c <- one_of(outs);
-		computer target_node <- c.target;
-		float p <- 0.6;
+		computer target_node;
+
+
+if c.source = self {
+	target_node <- c.target;
+}
+else {
+	target_node <- c.source;
+}
+		float p <- 0.35;
+
+
+// Firewall intenta bloquear ataques
+
+if target_node.is_firewall {
+
+	p <- p * (1.0 - firewall_strength);
+
+}
 		if 445 in target_node.open_ports {
 			p <- p * (1.0 - patch_level / 150.0);
 		}
@@ -137,25 +168,69 @@ species computer {
 		cooldown <- rnd(5) + 2;
 	}
 
-	// Aspecto visual de los nodos en el mapa
-	aspect default {
-	// Reducimos drásticamente el tamaño para que queden proporcionales a tus puntos de QGIS
-		float tam_nodo <- 0.2;
-		if is_firewall {
-			draw square(tam_nodo) color: #blue;
-		} else if is_switch {
-			draw square(tam_nodo) color: #gray;
-		} else if is_internet {
-			draw square(tam_nodo) color: #yellow;
-		} else if infected {
-			draw circle(tam_nodo) color: #red;
-		} else {
-			draw circle(tam_nodo) color: #green;
-		}
+aspect default {
 
-		// El texto también lo hacemos diminuto para que no sea un bloque gigante de letras
-		draw string(nombre) at: location + {0, -tam_nodo * 1.5} color: #black font: font("SansSerif", 8, #bold);
-	} }
+	float tam_nodo <- 0.2;
+
+
+	// ===========================
+	// NODOS INFECTADOS
+	// ===========================
+
+	if infected {
+
+		draw circle(tam_nodo)
+		color:#red;
+
+
+	}
+	else if is_firewall {
+
+
+		draw square(tam_nodo)
+		color:#blue;
+
+
+	}
+	else if is_switch {
+
+
+		draw square(tam_nodo)
+		color:#gray;
+
+
+	}
+	else if is_internet {
+
+
+		draw circle(tam_nodo)
+		color:#yellow;
+
+
+	}
+	else if is_server {
+
+	draw square(tam_nodo)
+	color:#purple;
+
+}
+	else {
+
+
+		draw circle(tam_nodo)
+		color:#green;
+
+
+	}
+
+
+
+	draw string(nombre)
+	at: location + {0,-tam_nodo * 1.5}
+	color:#black
+	font: font("SansSerif",8,#bold);
+
+}}
 
 	// =====================================================
 // ESPECIE: CONEXIONES (LÍNEAS DE RED)
@@ -168,9 +243,9 @@ species connection {
     aspect default {
         // Ponemos un width bien bajo (ej: 0.05 o 0.1)
         if geom != nil {
-            draw geom color: #orange width: 0.09;
+            draw geom color: #orange width: 5;
         } else if source != nil and target != nil {
-            draw line([source.location, target.location]) color: #orange width: 0.05;
+            draw line([source.location, target.location]) color: #orange width: 0.4;
         }
     }
 }

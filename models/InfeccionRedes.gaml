@@ -6,22 +6,28 @@ species sala {
 	aspect default {
 		draw shape color: rgb(165, 75, 75, 100) border: #black;
 	}
-
 }
 
 global {
 	file nodos_file <- file("../includes/nodos.shp");
 	file conexiones_file <- file("../includes/conexiones.shp");
 	file salas_file <- file("../includes/sala.shp");
-	geometry shape <- envelope(nodos_file);
+	geometry shape <- envelope(nodos_file); // Ajustado para evitar errores de límites (out of bounds)
 	float firewall_strength <- 0.7;
 	float containment_threshold <- 30.0;
 	bool emergency_containment <- false;
 	int cooldown_min <- 3;
 	int cooldown_max <- 8;
 	float initial_patch_level <- 10.0;
-	// ------------------------------z-------------------------
-	// INIT
+	
+	// =======================================================
+	// RUTAS DE ARCHIVOS PARA REGISTROS DE LOGS (.CSV)
+	// =======================================================
+	string log_general_path <- "../results/log_general.csv";
+	string log_eventos_path <- "../results/log_eventos.csv";
+
+	// -------------------------------------------------------
+	// INIT: Carga de componentes e inicialización de logs
 	// -------------------------------------------------------
 	init {
 		create sala from: salas_file {
@@ -63,27 +69,44 @@ global {
 				target <- first(de);
 				write "CONEXION OK " + string(o) + " -> " + string(d);
 			}
-
 		}
 
 		write "===== RESUMEN =====";
 		write "Nodos: " + string(length(computer));
 		write "Links: " + string(length(connection));
+		
+		// =======================================================
+		// ESCRITURA LOG 1: DATA GENERAL (ESTÁTICO)
+		// =======================================================
+		string encabezado_gen <- "total_nodos,total_salas,total_pcs,total_switches,total_firewall";
+		save encabezado_gen to: log_general_path rewrite: true;
+		
+		int t_nodos <- length(computer);
+		int t_salas <- length(sala);
+		int t_pcs <- length(computer where (not each.is_server and not each.is_internet and not each.is_firewall and not each.is_switch)); 
+		int t_switches <- length(computer where each.is_switch);
+		int t_firewalls <- length(computer where each.is_firewall);
+		
+		string datos_gen <- string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls);
+		save datos_gen to: log_general_path rewrite: false;
+		
+		// =======================================================
+		// INICIALIZACIÓN LOG 2: EVENTOS DE INFECCIÓN (DINÁMICO)
+		// =======================================================
+		string encabezado_evt <- "ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion";
+		save encabezado_evt to: log_eventos_path rewrite: true;
+		
+		write ">>> GENERACIÓN DE ARCHIVOS LOG CSV CONFIGURADA EN /results/ <<<";
 	}
 
 	// -------------------------------------------------------
 	// GLOBAL BDI: coordinador de red
-	// Actualiza creencias globales y dispara deseos colectivos
 	// -------------------------------------------------------
 	reflex BDI_global_perception {
-
-	// --- BELIEF GLOBAL: calcular tasa de infeccion ---
 		int total_nodos <- length(computer where !each.is_internet);
 		int total_infectados <- length(computer where (each.infected and !each.is_internet));
 		float tasa <- (total_nodos > 0) ? (float(total_infectados) / float(total_nodos) * 100.0) : 0.0;
 
-		// --- DESIRE GLOBAL: contencion de emergencia ---
-		// Si mas del 80% de la red esta infectada => deseo de aislamiento total
 		if tasa >= 80.0 and !emergency_containment {
 			emergency_containment <- true;
 			write "==============================";
@@ -92,19 +115,16 @@ global {
 			write " INTENCION: AISLAMIENTO TOTAL ";
 			write "==============================";
 
-			// INTENTION GLOBAL: aislar toda la red
 			ask computer where !each.is_internet {
 				isolated <- true;
 				intention <- "isolated";
 				write "*** AISLADO EMERGENCIA *** " + nombre;
 			}
-
 		}
-
 	}
 
 	// -------------------------------------------------------
-	// GLOBAL: contencion individual (reemplaza global_containment)
+	// GLOBAL: contencion individual
 	// -------------------------------------------------------
 	reflex BDI_global_containment {
 		list<computer> infectados_activos <- computer where (each.infected and !each.isolated and !each.is_internet and !each.detected);
@@ -120,14 +140,15 @@ global {
 					isolated <- true;
 					intention <- "isolated";
 					write "*** AISLADO *** " + nombre;
+					
+					// Registro de la acción de contención global en el log de eventos
+					string fila_defensa <- string(cycle) + "," + nombre + ",Aislamiento_Contencion,Global,0.0," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
+					save fila_defensa to: log_eventos_path rewrite: false;
 				}
-
 			} else {
 				write "*** CONTENCION FALLIDA SOBRE *** " + victima.nombre;
 			}
-
 		}
-
 	}
 
 	reflex emergency_check {
@@ -143,11 +164,8 @@ global {
 				intention <- "isolated";
 				write "*** AISLADO EMERGENCIA *** " + nombre;
 			}
-
 		}
-
 	}
-
 }
 
 // ==========================================================
@@ -161,49 +179,33 @@ species computer {
 	bool is_firewall <- false;
 	bool is_switch <- false;
 
-	// ----------------------------------------------------------
-	// ESTADO BASE
-	// ----------------------------------------------------------
+	// Base State
 	bool infected <- false;
 	bool isolated <- false;
 	bool detected <- false;
 
-	// ----------------------------------------------------------
-	// BELIEFS  (lo que el agente CREE sobre el mundo)
-	// ----------------------------------------------------------
-	bool bel_amenaza_cercana <- false; // hay vecinos infectados
-	bool bel_red_comprometida <- false; // tasa global alta
-	bool bel_soy_vulnerable <- false; // puertos abiertos + bajo parche
-	int bel_vecinos_infectados <- 0; // cuantos vecinos infectados
-	float bel_riesgo <- 0.0; // 0-100
+	// Beliefs
+	bool bel_amenaza_cercana <- false;
+	bool bel_red_comprometida <- false; 
+	bool bel_soy_vulnerable <- false;
+	int bel_vecinos_infectados <- 0; 
+	float bel_riesgo <- 0.0;
 
-	// ----------------------------------------------------------
-	// DESIRES  (lo que el agente QUIERE lograr)
-	// ----------------------------------------------------------
-	bool des_sobrevivir <- true; // siempre activo
-	bool des_infectar <- false; // activo si esta infectado
-	bool des_aislarse <- false; // activo si detecta amenaza alta
-	bool des_parchear <- false; // activo si es vulnerable
+	// Desires
+	bool des_sobrevivir <- true;
+	bool des_infectar <- false; 
+	bool des_aislarse <- false;
+	bool des_parchear <- false; 
 
-	// ----------------------------------------------------------
-	// INTENTION  (lo que el agente VA A HACER este ciclo)
-	// ----------------------------------------------------------
+	// Intentions
 	string intention <- "normal";
-	// valores posibles: "normal" | "spread" | "isolate" | "patch" | "isolated"
 
-	// ----------------------------------------------------------
-	// AUXILIARES
-	// ----------------------------------------------------------
+	// Auxiliaries
 	list<int> open_ports <- [];
 	int patch_level <- 0;
 	int cooldown <- 0;
 
-	// ==========================================================
-	// PASO 1 — PERCEPCION (actualiza Beliefs)
-	// ==========================================================
 	reflex BDI_perception {
-
-	// contar vecinos infectados
 		list<connection> links <- connection where (each.source = self or each.target = self);
 		int infectados <- 0;
 		loop c over: links {
@@ -211,68 +213,43 @@ species computer {
 			if vecino.infected {
 				infectados <- infectados + 1;
 			}
-
 		}
 
 		bel_vecinos_infectados <- infectados;
 		bel_amenaza_cercana <- infectados > 0;
 		bel_riesgo <- float(infectados) * 25.0;
-
-		// creer que soy vulnerable si tengo puertos abiertos y parche bajo
 		bel_soy_vulnerable <- (!empty(open_ports)) and (patch_level < 50);
-
-		// creer que la red esta comprometida si hay muchos infectados globalmente
+		
 		int total <- length(computer where !each.is_internet);
 		int glob <- length(computer where (each.infected and !each.is_internet));
 		bel_red_comprometida <- (total > 0) and ((float(glob) / float(total)) > 0.5);
 	}
 
-	// ==========================================================
-	// PASO 2 — DELIBERACION (Beliefs => Desires)
-	// ==========================================================
 	reflex BDI_deliberation {
-
-	// si estoy infectado => quiero propagar
 		des_infectar <- infected;
-
-		// si hay amenaza cerca o la red esta comprometida => quiero aislarme
 		des_aislarse <- bel_amenaza_cercana or bel_red_comprometida;
-
-		// si soy vulnerable y hay amenaza => quiero parchear
 		des_parchear <- bel_soy_vulnerable and bel_amenaza_cercana;
-
-		// sobrevivir siempre activo
 		des_sobrevivir <- true;
 	}
 
-	// ==========================================================
-	// PASO 3 — PLANIFICACION (Desires => Intention)
-	// Prioridad: isolated > isolate > patch > spread > normal
-	// ==========================================================
 	reflex BDI_planning {
-
-	// si ya fui aislado externamente, mantener intention
 		if isolated {
 			intention <- "isolated";
 			return;
 		}
 
-		// MAYOR PRIORIDAD: aislarse (sobrevivir supera a infectar)
 		if des_aislarse and des_sobrevivir and bel_riesgo > 50.0 {
 			if rnd(100) < containment_threshold {
 				intention <- "isolate";
 				return;
 			}
-
 		}
 
-		// parchearse si es vulnerable
 		if des_parchear and !infected {
 			intention <- "patch";
 			return;
 		}
 
-		// propagar si esta infectado
 		if des_infectar {
 			intention <- "spread";
 			return;
@@ -281,16 +258,12 @@ species computer {
 		intention <- "normal";
 	}
 
-	// ==========================================================
-	// PASO 4 — EJECUCION (ejecuta la Intention)
-	// ==========================================================
 	reflex BDI_execute {
 		if cooldown > 0 {
 			cooldown <- cooldown - 1;
 		}
 
 		if intention = "isolated" {
-		// ya aislado, no hace nada
 			return;
 		}
 
@@ -302,13 +275,11 @@ species computer {
 		}
 
 		if intention = "patch" {
-		// incrementar nivel de parche gradualmente
 			patch_level <- min(100, patch_level + 10);
 			if patch_level >= 50 {
 				bel_soy_vulnerable <- false;
 				des_parchear <- false;
 			}
-
 			write "*** BDI PARCHEO *** " + nombre + " => patch_level=" + string(patch_level);
 			return;
 		}
@@ -317,12 +288,10 @@ species computer {
 			do spread_action;
 			return;
 		}
-
-		// intention = "normal" => no hace nada especial
 	}
 
 	// ==========================================================
-	// ACCION: propagar infeccion
+	// ACCION: propagar infeccion e inyectar logs al CSV
 	// ==========================================================
 	action spread_action {
 		if cooldown > 0 {
@@ -364,15 +333,39 @@ species computer {
 		if flip(p) {
 			destino.infected <- true;
 			destino.detected <- false;
+			
+			// Consola nativa
 			write "BDI INFECTA -> " + destino.nombre + " desde " + self.nombre + " | p=" + string(p);
+			
+			// =======================================================
+			// EXTRACCIÓN Y ESCRITURA EN EL LOG DINÁMICO (.CSV)
+			// =======================================================
+			int ciclo_actual <- cycle;
+			string nombre_nodo <- destino.nombre;
+			string evento_tipo <- "Infeccion_Exitosa";
+			string origen_inf <- self.nombre;
+			float prob_infeccion <- p;
+			int p_level <- destino.patch_level;
+			int total_inf <- length(computer where each.infected);
+			string intencion_bdi <- self.intention; 
+			
+			string fila_evento <- string(ciclo_actual) + "," + 
+								  nombre_nodo + "," + 
+								  evento_tipo + "," + 
+								  origen_inf + "," + 
+								  string(prob_infeccion) + "," + 
+								  string(p_level) + "," + 
+								  string(total_inf) + "," + 
+								  intencion_bdi;
+			
+			// Guarda sumando líneas al CSV existente (Se eliminó type: "text")
+			save fila_evento to: log_eventos_path rewrite: false;
 		}
 
 		cooldown <- rnd(cooldown_max) + cooldown_min;
 	}
 
-	// ==========================================================
-	// ASPECTO VISUAL
-	// ==========================================================
+	// Visual Base
 	aspect default {
 		float tam <- 0.2;
 		if infected {
@@ -393,10 +386,13 @@ species computer {
 			draw circle(tam * 1.4) color: #black;
 		}
 
-		// mostrar intention como tooltip visual
 		draw string(nombre + " [" + intention + "]") at: location + {0, -0.5} color: #black font: font("SansSerif", 8, #bold);
-	} }
+	}
+}
 
+// =====================================================
+// CONEXIONES
+// =====================================================
 species connection {
 	computer source;
 	computer target;
@@ -404,13 +400,16 @@ species connection {
 	aspect default {
 		draw line([source.location, target.location]) color: #orange width: 2;
 	}
-
 }
 
+// =====================================================
+// EXPERIMENTO PRINCIPAL (GUI)
+// =====================================================
 experiment Infeccion type: gui {
 	parameter "Nivel de Contencion (%)" type: float var: containment_threshold min: 0 max: 100 category: "Seguridad BDI";
 	parameter "Fuerza Firewall (0-1)" type: float var: firewall_strength min: 0.0 max: 1.0 category: "Seguridad BDI";
 	parameter "Nivel de Parche Inicial (%)" type: float var: initial_patch_level min: 0 max: 100 category: "Seguridad BDI";
+	
 	output {
 		display mapa_red {
 			species sala;
@@ -426,5 +425,4 @@ experiment Infeccion type: gui {
 		monitor "Intencion: patch" value: length(computer where (each.intention = "patch"));
 		monitor "Riesgo promedio" value: mean(computer collect each.bel_riesgo);
 	}
-
 }

@@ -1,6 +1,0 @@
-encabezado_evt
-ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion
-137,fw1,Infeccion_Exitosa,internet,0.0637,59,2,spread
-138,sw1,Infeccion_Exitosa,fw1,0.27999999999999997,30,3,spread
-139,sw1,Aislamiento_Contencion,Global,0.0,30,3,isolated
-139,fw1,Aislamiento_Contencion,Global,0.0,59,3,isolated

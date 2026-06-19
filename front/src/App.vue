@@ -1,6 +1,5 @@
 <template>
   <div class="dashboard">
-    <!-- HEADER -->
     <header class="header">
       <div class="header-left">
         <span class="header-tag">BDI · GAMA Platform</span>
@@ -27,7 +26,6 @@
       </div>
     </header>
 
-    <!-- MAPA DE RED -->
     <section class="map-section">
       <div class="section-label">Red · Topología en vivo</div>
       <div ref="cyContainer" class="cy-container"></div>
@@ -36,13 +34,25 @@
         <span class="leg-item"><span class="dot" style="background:#ef4444"></span>Infectado</span>
         <span class="leg-item"><span class="dot"
             style="background:#1e293b;border:2px solid #475569"></span>Aislado</span>
-        <span class="leg-item"><span class="dot square" style="background:#3b82f6"></span>Firewall</span>
-        <span class="leg-item"><span class="dot square" style="background:#94a3b8"></span>Switch</span>
-        <span class="leg-item"><span class="dot" style="background:#facc15"></span>Internet</span>
+
+        <span class="leg-item">
+          <v-icon icon="mdi-monitor" size="20" class="mr-1" color="slate-light"></v-icon> PC
+        </span>
+        <span class="leg-item">
+          <v-icon icon="mdi-shield-lock" size="20" class="mr-1" color="blue"></v-icon> Firewall
+        </span>
+        <span class="leg-item">
+          <v-icon icon="mdi-swap-horizontal" size="20" class="mr-1" color="slate"></v-icon> Switch
+        </span>
+        <span class="leg-item">
+          <v-icon icon="mdi-cloud" size="20" class="mr-1" color="amber"></v-icon> Internet
+        </span>
+        <span class="leg-item">
+          <v-icon icon="mdi-server" size="20" class="mr-1" color="purple"></v-icon> Server
+        </span>
       </div>
     </section>
 
-    <!-- GRAFICAS -->
     <section class="charts-section">
       <div class="chart-card">
         <div class="chart-label">Infectados por ciclo</div>
@@ -126,6 +136,128 @@ const stats = computed(() => {
 
 const eventosRecientes = computed(() => [...eventos.value].reverse().slice(0, 50))
 
+// ───────────────────────────────────────────────────────────
+// ICONOS SVG (base64)
+// ───────────────────────────────────────────────────────────
+function svgToDataUri(svg) {
+  return 'data:image/svg+xml;base64,' + btoa(svg)
+}
+
+const ICON_PC = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="8" y="10" width="48" height="32" rx="2" fill="#1e293b" stroke="#22c55e" stroke-width="2.5"/>
+  <rect x="13" y="15" width="38" height="22" fill="#0f172a"/>
+  <rect x="24" y="44" width="16" height="4" fill="#475569"/>
+  <rect x="16" y="48" width="32" height="4" rx="1" fill="#475569"/>
+</svg>`)
+
+const ICON_PC_INFECTED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="8" y="10" width="48" height="32" rx="2" fill="#1e293b" stroke="#ef4444" stroke-width="2.5"/>
+  <rect x="13" y="15" width="38" height="22" fill="#450a0a"/>
+  <text x="32" y="31" font-size="16" fill="#ef4444" text-anchor="middle" font-family="monospace">!</text>
+  <rect x="24" y="44" width="16" height="4" fill="#475569"/>
+  <rect x="16" y="48" width="32" height="4" rx="1" fill="#475569"/>
+</svg>`)
+
+const ICON_PC_ISOLATED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="8" y="10" width="48" height="32" rx="2" fill="#1e293b" stroke="#475569" stroke-width="2.5"/>
+  <rect x="13" y="15" width="38" height="22" fill="#0f172a"/>
+  <line x1="6" y1="6" x2="58" y2="58" stroke="#475569" stroke-width="3"/>
+  <rect x="24" y="44" width="16" height="4" fill="#334155"/>
+  <rect x="16" y="48" width="32" height="4" rx="1" fill="#334155"/>
+</svg>`)
+
+const ICON_FIREWALL = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="10" y="8" width="44" height="48" rx="3" fill="#1e3a8a" stroke="#3b82f6" stroke-width="2.5"/>
+  <path d="M20 18 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#93c5fd" stroke-width="2"/>
+  <path d="M20 28 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#93c5fd" stroke-width="2"/>
+  <path d="M20 38 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#93c5fd" stroke-width="2"/>
+  <path d="M20 48 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#93c5fd" stroke-width="2"/>
+</svg>`)
+
+const ICON_FIREWALL_INFECTED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="10" y="8" width="44" height="48" rx="3" fill="#7f1d1d" stroke="#ef4444" stroke-width="2.5"/>
+  <path d="M20 18 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#fca5a5" stroke-width="2"/>
+  <path d="M20 28 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#fca5a5" stroke-width="2"/>
+  <path d="M20 38 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#fca5a5" stroke-width="2"/>
+  <path d="M20 48 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#fca5a5" stroke-width="2"/>
+</svg>`)
+
+const ICON_FIREWALL_ISOLATED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="10" y="8" width="44" height="48" rx="3" fill="#1e293b" stroke="#475569" stroke-width="2.5"/>
+  <path d="M20 18 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#64748b" stroke-width="2"/>
+  <path d="M20 28 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#64748b" stroke-width="2"/>
+  <path d="M20 38 q6 -6 12 0 q6 -6 12 0" fill="none" stroke="#64748b" stroke-width="2"/>
+  <line x1="6" y1="6" x2="58" y2="58" stroke="#475569" stroke-width="3"/>
+</svg>`)
+
+const ICON_SWITCH = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="6" y="22" width="52" height="20" rx="2" fill="#334155" stroke="#94a3b8" stroke-width="2.5"/>
+  <rect x="12" y="28" width="5" height="5" fill="#22c55e"/>
+  <rect x="20" y="28" width="5" height="5" fill="#22c55e"/>
+  <rect x="28" y="28" width="5" height="5" fill="#22c55e"/>
+  <rect x="36" y="28" width="5" height="5" fill="#22c55e"/>
+  <rect x="44" y="28" width="5" height="5" fill="#22c55e"/>
+</svg>`)
+
+const ICON_SWITCH_INFECTED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="6" y="22" width="52" height="20" rx="2" fill="#451a1a" stroke="#ef4444" stroke-width="2.5"/>
+  <rect x="12" y="28" width="5" height="5" fill="#ef4444"/>
+  <rect x="20" y="28" width="5" height="5" fill="#ef4444"/>
+  <rect x="28" y="28" width="5" height="5" fill="#ef4444"/>
+  <rect x="36" y="28" width="5" height="5" fill="#ef4444"/>
+  <rect x="44" y="28" width="5" height="5" fill="#ef4444"/>
+</svg>`)
+
+const ICON_SWITCH_ISOLATED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="6" y="22" width="52" height="20" rx="2" fill="#0f172a" stroke="#475569" stroke-width="2.5"/>
+  <rect x="12" y="28" width="5" height="5" fill="#334155"/>
+  <circle cx="44" cy="32" r="2" fill="#334155"/>
+  <line x1="6" y1="14" x2="58" y2="50" stroke="#475569" stroke-width="3"/>
+</svg>`)
+
+const ICON_CLOUD = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path d="M18 40 a10 10 0 0 1 0 -20 a13 13 0 0 1 25 -4 a10 10 0 0 1 3 24 z"
+        fill="#facc15" stroke="#854d0e" stroke-width="2"/>
+</svg>`)
+
+const ICON_SERVER = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="12" y="8" width="40" height="14" rx="2" fill="#581c87" stroke="#a855f7" stroke-width="2"/>
+  <rect x="12" y="25" width="40" height="14" rx="2" fill="#581c87" stroke="#a855f7" stroke-width="2"/>
+  <rect x="12" y="42" width="40" height="14" rx="2" fill="#581c87" stroke="#a855f7" stroke-width="2"/>
+  <circle cx="44" cy="15" r="2" fill="#22c55e"/>
+  <circle cx="44" cy="32" r="2" fill="#22c55e"/>
+  <circle cx="44" cy="49" r="2" fill="#22c55e"/>
+</svg>`)
+
+const ICON_SERVER_INFECTED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="12" y="8" width="40" height="14" rx="2" fill="#7f1d1d" stroke="#ef4444" stroke-width="2"/>
+  <rect x="12" y="25" width="40" height="14" rx="2" fill="#7f1d1d" stroke="#ef4444" stroke-width="2"/>
+  <rect x="12" y="42" width="40" height="14" rx="2" fill="#7f1d1d" stroke="#ef4444" stroke-width="2"/>
+  <circle cx="44" cy="15" r="2" fill="#ef4444"/>
+  <circle cx="44" cy="32" r="2" fill="#ef4444"/>
+  <circle cx="44" cy="49" r="2" fill="#ef4444"/>
+</svg>`)
+
+const ICON_SERVER_ISOLATED = svgToDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="12" y="8" width="40" height="14" rx="2" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+  <rect x="12" y="25" width="40" height="14" rx="2" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+  <rect x="12" y="42" width="40" height="14" rx="2" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+  <line x1="6" y1="4" x2="58" y2="60" stroke="#475569" stroke-width="3"/>
+</svg>`)
+
 // ── INIT ──────────────────────────────────────────────────
 onMounted(async () => {
   await initCytoscape()
@@ -137,33 +269,21 @@ onUnmounted(() => clearInterval(pollTimer))
 
 // ── CYTOSCAPE ─────────────────────────────────────────────
 async function initCytoscape() {
-
   const [nodosRaw, topoRaw] = await Promise.all([
-    fetchCSV(`${BASE}/log_nodos.csv`),
-    fetchCSV(`${BASE}/log_topologia.csv`),
+    fetchCSVSkipFirstLine(`${BASE}/log_nodos.csv`),
+    fetchCSVSkipFirstLine(`${BASE}/log_topologia.csv`),
   ])
 
-  const nodos = nodosRaw.map(cleanRow)
-  const topo = topoRaw.map(cleanRow)
-
-  console.log('NODOS:', nodos)
-  console.log('TOPO:', topo)
+  const nodos = nodosRaw.map(cleanRow).filter(n => n.nombre && n.nombre !== '')
+  const topo = topoRaw.map(cleanRow).filter(t => t.origen && t.destino && t.origen !== '' && t.destino !== '')
 
   nodos.forEach(n => {
-
     nodoEstado.value[n.nombre] = {
-
       tipo: n.tipo,
-
-      // todos inician sanos
       infected: false,
-
       isolated: false,
-
       is_internet: n.tipo === 'internet',
-
     }
-
   })
 
   const elements = [
@@ -179,10 +299,16 @@ async function initCytoscape() {
     container: cyContainer.value,
     elements,
     style: cyStyles(),
-    layout: { name: 'breadthfirst', directed: false, padding: 40, spacingFactor: 1.5 },
+    layout: { name: 'breadthfirst', directed: false, padding: 60, spacingFactor: 2.8 },
     userZoomingEnabled: true,
     userPanningEnabled: true,
   })
+
+  const internetNodo = nodos.find(n => n.tipo === 'internet')
+  if (internetNodo) {
+    nodoEstado.value[internetNodo.nombre].infected = true
+    updateCyNode(internetNodo.nombre, true, false, false)
+  }
 }
 
 function cyStyles() {
@@ -191,110 +317,84 @@ function cyStyles() {
       selector: 'node',
       style: {
         label: 'data(label)',
-        'font-size': '11px',
+        'font-size': '40px',
         'font-family': 'monospace',
         color: '#e2e8f0',
         'text-valign': 'bottom',
-        'text-margin-y': '6px',
-        width: '38px',
-        height: '38px',
-        'background-color': '#22c55e',
-        'border-width': '2px',
-        'border-color': '#166534',
+        'text-margin-y': '10px',
+        width: '60px',
+        height: '60px',
+        shape: 'rectangle',
+        'background-fit': 'contain',
+        'background-clip': 'none',
+        'background-opacity': 0,
+        'border-width': 0,
+        'background-image': ICON_PC,
       },
     },
-    { selector: 'node[tipo="internet"]', style: { 'background-color': '#facc15', 'border-color': '#854d0e' } },
-    { selector: 'node[tipo="firewall"]', style: { 'background-color': '#3b82f6', 'border-color': '#1e3a8a', shape: 'rectangle' } },
-    { selector: 'node[tipo="switch"]', style: { 'background-color': '#94a3b8', 'border-color': '#334155', shape: 'rectangle' } },
-    { selector: 'node[tipo="server"]', style: { 'background-color': '#a855f7', 'border-color': '#581c87', shape: 'rectangle' } },
-    { selector: 'node.infected', style: { 'background-color': '#ef4444', 'border-color': '#7f1d1d' } },
-    { selector: 'node.isolated', style: { 'background-color': '#1e293b', 'border-color': '#94a3b8', 'border-width': '4px' } },
+    { selector: 'node[tipo="pc"]', style: { 'background-image': ICON_PC, width: '120px', height: '120px' } },
+    { selector: 'node[tipo="server"]', style: { 'background-image': ICON_SERVER, width: '120px', height: '120px' } },
+    { selector: 'node[tipo="firewall"]', style: { 'background-image': ICON_FIREWALL, width: '120px', height: '120px' } },
+    { selector: 'node[tipo="switch"]', style: { 'background-image': ICON_SWITCH, width: '120px', height: '120px' } },
+    { selector: 'node[tipo="internet"]', style: { 'background-image': ICON_CLOUD, width: '120px', height: '120px' } },
+
+    { selector: 'node.infected[tipo="pc"]', style: { 'background-image': ICON_PC_INFECTED } },
+    { selector: 'node.infected[tipo="firewall"]', style: { 'background-image': ICON_FIREWALL_INFECTED } },
+    { selector: 'node.infected[tipo="switch"]', style: { 'background-image': ICON_SWITCH_INFECTED } },
+    { selector: 'node.infected[tipo="server"]', style: { 'background-image': ICON_SERVER_INFECTED } },
+
+    { selector: 'node.isolated[tipo="pc"]', style: { 'background-image': ICON_PC_ISOLATED } },
+    { selector: 'node.isolated[tipo="firewall"]', style: { 'background-image': ICON_FIREWALL_ISOLATED } },
+    { selector: 'node.isolated[tipo="switch"]', style: { 'background-image': ICON_SWITCH_ISOLATED } },
+    { selector: 'node.isolated[tipo="server"]', style: { 'background-image': ICON_SERVER_ISOLATED } },
+
     {
       selector: 'edge',
       style: {
-        width: 2,
+        width: 3,
         'line-color': '#f97316',
         'target-arrow-color': '#f97316',
         'target-arrow-shape': 'triangle',
         'curve-style': 'bezier',
-        opacity: 0.7,
+        opacity: 0.8,
       },
     },
     {
       selector: 'edge.attack',
-
       style: {
-
         'line-color': '#ef4444',
-
         'target-arrow-color': '#ef4444',
-
-        width: 5,
-
+        width: 6,
         opacity: 1,
-
         'line-style': 'solid'
-
       }
-
     }
   ]
 }
 
 function updateCyNode(nombre, infected, isolated) {
-
   if (!cy) return
-
-
   const node = cy.getElementById(nombre)
-
-
-  if (!node || !node.length)
-    return
-
+  if (!node || !node.length) return
 
   node.removeClass('infected isolated')
 
-
   if (isolated) {
-
-
     node.addClass('isolated')
-
-
   } else if (infected) {
-
-
     node.addClass('infected')
-
-
-    // efecto de propagación
+    const baseW = node.numericStyle('width')
+    const baseH = node.numericStyle('height')
     node.animate(
-      {
-        style: {
-          width: 55,
-          height: 55
-        }
-      },
+      { style: { width: baseW * 1.4, height: baseH * 1.4 } },
       {
         duration: 300,
         complete: function () {
-
-          node.animate({
-            style: {
-              width: 38,
-              height: 38
-            }
-          }, {
-            duration: 300
-          })
-
+          node.animate({ style: { width: baseW, height: baseH } }, { duration: 300 })
         }
       }
     )
-
   }
-
 }
 
 // ── ECHARTS ───────────────────────────────────────────────
@@ -323,15 +423,37 @@ function initCharts() {
 
   ecIntenciones.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['spread', 'patch', 'isolate', 'normal'], textStyle: { color: '#94a3b8', fontSize: 10 }, top: 4 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: function (params) {
+        const map = { spread: 'Propagar', patch: 'Parchar', isolated: 'Aislar', normal: 'Normal' }
+        let res = `<div style="font-family: monospace;">Ciclo: ${params[0].name}</div>`
+        params.forEach(item => {
+          if (item.value > 0) {
+            const label = map[item.seriesName] || item.seriesName
+            res += `<div style="font-family: monospace;">${item.marker} ${label}: <b>${item.value}</b></div>`
+          }
+        })
+        return res
+      }
+    },
+    legend: {
+      data: ['spread', 'patch', 'isolated', 'normal'],
+      textStyle: { color: '#94a3b8', fontSize: 10 },
+      top: 4,
+      formatter: function (name) {
+        const map = { spread: 'Propagar', patch: 'Parchar', isolated: 'Aislar', normal: 'Normal' }
+        return map[name] || name
+      }
+    },
     grid: { left: 44, right: 16, top: 36, bottom: 36 },
     xAxis: { type: 'category', data: [], axisLabel: { color: '#94a3b8', fontSize: 10 } },
     yAxis: { type: 'value', axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b' } } },
     series: [
       { name: 'spread', type: 'bar', stack: 'total', data: [], itemStyle: { color: '#ef4444' } },
       { name: 'patch', type: 'bar', stack: 'total', data: [], itemStyle: { color: '#22c55e' } },
-      { name: 'isolate', type: 'bar', stack: 'total', data: [], itemStyle: { color: '#475569' } },
+      { name: 'isolated', type: 'bar', stack: 'total', data: [], itemStyle: { color: '#475569' } },
       { name: 'normal', type: 'bar', stack: 'total', data: [], itemStyle: { color: '#1e293b' } },
     ],
   })
@@ -348,49 +470,61 @@ function startPolling() {
 
 async function pollCSV() {
   try {
-    const rawRows = await fetchCSV(`${BASE}/log_eventos.csv`)
-    const rows = rawRows.map(cleanRow)
 
-    if (rows.length <= lastRowCount) return
+    const rawRows =
+      await fetchCSV(`${BASE}/log_eventos.csv`)
 
-    const nuevas = rows.slice(lastRowCount)
-    lastRowCount = rows.length
+    const rows =
+      rawRows.map(cleanRow)
+
+    if (rows.length <= lastRowCount)
+      return
+
+    const nuevas =
+      rows.slice(lastRowCount)
+
+    lastRowCount =
+      rows.length
 
     nuevas.forEach(procesarEvento)
-    eventos.value = rows
+
+    // fuerza reactividad
+    eventos.value = [...rows]
+
     updateCharts(rows)
+
+    if (cy) {
+      cy.resize()
+      cy.fit(undefined, 40)
+    }
+
   } catch (e) {
-    console.warn('Poll error', e)
+
+    console.warn(
+      'Poll error',
+      e
+    )
+
   }
 }
 
 function procesarEvento(ev) {
 
-
   const nodo = ev.nodo
   const evento = ev.evento
   const desde = ev.desde
 
-
-
-  if (!nodo || nodo === "-")
+  if (!nodo || nodo === '-')
     return
 
 
-
-  // =========================
-  // INFECCION
-  // =========================
-
-  if (evento === "Infeccion_Exitosa") {
-
+  // INFECCIÓN
+  if (evento === 'Infeccion_Exitosa') {
 
     if (nodoEstado.value[nodo]) {
-
       nodoEstado.value[nodo].infected = true
-
+      nodoEstado.value[nodo].isolated = false
     }
-
 
     updateCyNode(
       nodo,
@@ -398,73 +532,71 @@ function procesarEvento(ev) {
       false
     )
 
+    if (
+      desde &&
+      desde !== '-' &&
+      cy
+    ) {
 
-
-    // marcar camino de ataque
-
-    if (desde && desde !== "-") {
-
-
-      let edge =
-        cy.getElementById(
-          `${desde}-${nodo}`
-        )
-
-
-
-      // si la conexión está invertida
-
-      if (!edge.length) {
-
-        edge =
-          cy.getElementById(
-            `${nodo}-${desde}`
+      const edge =
+        cy
+          .edges()
+          .filter(e =>
+            (
+              e.data('source') === desde &&
+              e.data('target') === nodo
+            )
+            ||
+            (
+              e.data('source') === nodo &&
+              e.data('target') === desde
+            )
           )
-
-      }
-
-
 
       if (edge.length) {
 
-        edge.addClass("attack")
-
+        edge.addClass(
+          'attack'
+        )
 
       }
 
-
     }
-
 
   }
 
 
-
-
-
-  // =========================
   // AISLAMIENTO
-  // =========================
-
-
   if (
-    evento === "AISLADO_EMERGENCIA" ||
-    evento === "AISLADO" ||
-    evento === "Aislamiento_Contencion"
+
+    evento ===
+      'AISLADO'
+
+    ||
+
+    evento ===
+      'AISLADO_EMERGENCIA'
+
+    ||
+
+    evento ===
+      'Aislamiento_Contencion'
+
   ) {
 
+    if (
+      nodoEstado.value[nodo]
+    ) {
 
-    if (nodoEstado.value[nodo]) {
+      nodoEstado.value[
+        nodo
+      ].infected = true
 
-
-      nodoEstado.value[nodo].isolated = true
-
-      nodoEstado.value[nodo].infected = true
-
+      nodoEstado.value[
+        nodo
+      ].isolated = true
 
     }
-
-
 
     updateCyNode(
       nodo,
@@ -472,24 +604,52 @@ function procesarEvento(ev) {
       true
     )
 
-
   }
 
+
+  // PARCHEO
+  if (
+    evento ===
+    'PARCHEO'
+  ) {
+
+    if (
+      nodoEstado.value[
+        nodo
+      ]
+    ) {
+
+      nodoEstado.value[
+        nodo
+      ].infected =
+        false
+
+      nodoEstado.value[
+        nodo
+      ].isolated =
+        false
+
+    }
+
+    updateCyNode(
+      nodo,
+      false,
+      false
+    )
+
+  }
 
 }
 
 function updateCharts(rows) {
-  // eje X: ciclos únicos ordenados
   const ciclosSet = [...new Set(rows.map(r => r.ciclo))].sort((a, b) => parseInt(a) - parseInt(b))
 
-  // infectados: último valor de infectados_total por ciclo
   const infectSerie = ciclosSet.map(c => {
     const filasC = rows.filter(r => r.ciclo === c && r.infectados_total && r.infectados_total !== '-')
     if (!filasC.length) return null
     return parseInt(filasC[filasC.length - 1].infectados_total)
   })
 
-  // patch avg: promedio de patch_lv en filas PARCHEO por ciclo
   const patchRows = rows.filter(r => r.evento === 'PARCHEO')
   const patchCiclos = [...new Set(patchRows.map(r => r.ciclo))].sort((a, b) => parseInt(a) - parseInt(b))
   const patchSerie = patchCiclos.map(c => {
@@ -497,7 +657,6 @@ function updateCharts(rows) {
     return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0
   })
 
-  // intenciones por ciclo
   const spreadSerie = ciclosSet.map(c => rows.filter(r => r.ciclo === c && r.intencion === 'spread').length)
   const patchISerie = ciclosSet.map(c => rows.filter(r => r.ciclo === c && r.intencion === 'patch').length)
   const isolateSerie = ciclosSet.map(c => rows.filter(r => r.ciclo === c && (r.intencion === 'isolated' || r.intencion === 'isolate')).length)
@@ -505,18 +664,43 @@ function updateCharts(rows) {
 
   ecInfectados.setOption({ xAxis: { data: ciclosSet }, series: [{ data: infectSerie }] })
   ecPatch.setOption({ xAxis: { data: patchCiclos }, series: [{ data: patchSerie }] })
+
+  if (!ecIntenciones) {
+    ecIntenciones = echarts.init(chartIntenciones.value, 'dark')
+  }
+
   ecIntenciones.setOption({
     xAxis: { data: ciclosSet },
     series: [
-      { data: spreadSerie },
-      { data: patchISerie },
-      { data: isolateSerie },
-      { data: normalSerie },
+      { name: 'spread', data: spreadSerie },
+      { name: 'patch', data: patchISerie },
+      { name: 'isolated', data: isolateSerie },
+      { name: 'normal', data: normalSerie },
     ],
   })
 }
 
 // ── CSV HELPER ────────────────────────────────────────────
+async function fetchCSVSkipFirstLine(path) {
+  const res = await fetch(path)
+  const text = await res.text()
+  const lines = text.split('\n')
+
+  const primeraLinea = lines[0].trim()
+  const esBasura = primeraLinea && !primeraLinea.includes(',')
+  const textoLimpio = esBasura ? lines.slice(1).join('\n') : text
+
+  return new Promise((resolve, reject) => {
+    Papa.parse(textoLimpio, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: h => h.trim(),
+      complete: r => resolve(r.data),
+      error: reject,
+    })
+  })
+}
+
 function fetchCSV(path) {
   return new Promise((resolve, reject) => {
     Papa.parse(path, {
@@ -531,19 +715,65 @@ function fetchCSV(path) {
 }
 
 function rowClass(evento) {
-  if (evento === 'Infeccion_Exitosa') return 'row-infected'
-  if (evento?.includes('AISLADO')) return 'row-isolated'
-  if (evento === 'ALERTA_CRITICA') return 'row-alert'
-  if (evento === 'PARCHEO') return 'row-patch'
+
+  if (
+    evento ===
+    'Infeccion_Exitosa'
+  )
+    return 'row-infected'
+
+  if (
+    evento?.includes(
+      'AISLADO'
+    )
+  )
+    return 'row-isolated'
+
+  if (
+    evento ===
+    'ALERTA_CRITICA'
+  )
+    return 'row-alert'
+
+  if (
+    evento ===
+    'PARCHEO'
+  )
+    return 'row-patch'
+
   return ''
+
 }
 
 function badgeClass(evento) {
-  if (evento === 'Infeccion_Exitosa') return 'badge-red'
-  if (evento?.includes('AISLADO')) return 'badge-dark'
-  if (evento === 'ALERTA_CRITICA') return 'badge-orange'
-  if (evento === 'PARCHEO') return 'badge-green'
+
+  if (
+    evento ===
+    'Infeccion_Exitosa'
+  )
+    return 'badge-red'
+
+  if (
+    evento?.includes(
+      'AISLADO'
+    )
+  )
+    return 'badge-dark'
+
+  if (
+    evento ===
+    'ALERTA_CRITICA'
+  )
+    return 'badge-orange'
+
+  if (
+    evento ===
+    'PARCHEO'
+  )
+    return 'badge-green'
+
   return 'badge-gray'
+
 }
 </script>
 
@@ -670,7 +900,7 @@ function badgeClass(evento) {
 
 .cy-container {
   width: 100%;
-  height: 300px;
+  height: 600px;
   background: #0d1526;
   border: 1px solid #1e293b;
   border-radius: 8px;
@@ -696,10 +926,6 @@ function badgeClass(evento) {
   height: 10px;
   border-radius: 50%;
   display: inline-block;
-}
-
-.dot.square {
-  border-radius: 2px;
 }
 
 .charts-section {

@@ -90,7 +90,6 @@ global {
 		int t_firewalls <- length(computer where each.is_firewall);
 		string datos_gen <- string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls);
 		save datos_gen to: log_general_path rewrite: false;
-		save datos_gen to: log_general_path rewrite: false;
 
 		// =======================================================
 		// ESCRITURA LOG 3: NODOS (ESTÁTICO)

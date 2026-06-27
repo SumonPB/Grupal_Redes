@@ -20,12 +20,15 @@ global {
 	int cooldown_min <- 3;
 	int cooldown_max <- 8;
 	float initial_patch_level <- 10.0;
+	string scenario_label <- "Personalizado";
 
 	// =======================================================
 	// RUTAS DE ARCHIVOS PARA REGISTROS DE LOGS (.CSV)
 	// =======================================================
 	string log_general_path  <- "../front/public/results/log_general.csv";
+	string log_general_hist_path <- "../front/public/results/log_general_hist.csv";
     string log_eventos_path  <- "../front/public/results/log_eventos.csv";
+	string log_eventos_hist_path <- "../front/public/results/log_eventos_hist.csv";
 
 
 	// -------------------------------------------------------
@@ -78,18 +81,34 @@ global {
 		write "Nodos: " + string(length(computer));
 		write "Links: " + string(length(connection));
 
+		if int(firewall_strength * 10.0) = 1 and int(initial_patch_level) = 5 and int(containment_threshold) = 5 {
+			scenario_label <- "E1 - Real 2017";
+		} else if int(firewall_strength * 10.0) = 9 and int(initial_patch_level) = 5 and int(containment_threshold) = 10 {
+			scenario_label <- "E2 - Solo firewall";
+		} else if int(firewall_strength * 10.0) = 1 and int(initial_patch_level) = 80 and int(containment_threshold) = 20 {
+			scenario_label <- "E3 - Solo parches";
+		} else if int(firewall_strength * 10.0) = 5 and int(initial_patch_level) = 30 and int(containment_threshold) = 80 {
+			scenario_label <- "E4 - SOC activo";
+		} else if int(firewall_strength * 10.0) = 10 and int(initial_patch_level) = 100 and int(containment_threshold) = 90 {
+			scenario_label <- "E5 - Red segura";
+		}
+
 		// =======================================================
 		// ESCRITURA LOG 1: DATA GENERAL (ESTÁTICO)
 		// =======================================================
-		string encabezado_gen <- "total_nodos,total_salas,total_pcs,total_switches,total_firewall";
-		save encabezado_gen to: log_general_path rewrite: true;
+		string encabezado_gen <- "total_nodos,total_salas,total_pcs,total_switches,total_firewall,firewall_strength,containment_threshold";
 		int t_nodos <- length(computer);
 		int t_salas <- length(sala);
 		int t_pcs <- length(computer where (not each.is_server and not each.is_internet and not each.is_firewall and not each.is_switch));
 		int t_switches <- length(computer where each.is_switch);
 		int t_firewalls <- length(computer where each.is_firewall);
-		string datos_gen <- string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls);
+		save encabezado_gen to: log_general_path rewrite: true;
+		string datos_gen <- string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls) + "," + string(firewall_strength) + "," + string(containment_threshold);
 		save datos_gen to: log_general_path rewrite: false;
+		string encabezado_hist_gen <- "escenario,firewall_strength,initial_patch_level,containment_threshold,total_nodos,total_salas,total_pcs,total_switches,total_firewall";
+		save encabezado_hist_gen to: log_general_hist_path rewrite: false;
+		string datos_hist_gen <- scenario_label + "," + string(firewall_strength) + "," + string(initial_patch_level) + "," + string(containment_threshold) + "," + string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls);
+		save datos_hist_gen to: log_general_hist_path rewrite: false;
 
 		// =======================================================
 		// ESCRITURA LOG 3: NODOS (ESTÁTICO)
@@ -175,12 +194,8 @@ loop c over: connection {
 		// =======================================================
 		string encabezado_evt <- "ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion";
 		save encabezado_evt to: log_eventos_path rewrite: true;
-		write ">>> GENERACIÓN DE ARCHIVOS LOG CSV CONFIGURADA EN /results/ <<<";
-		// =======================================================
-		// INICIALIZACIÓN LOG 2: EVENTOS DE INFECCIÓN (DINÁMICO)
-		// =======================================================
-		string encabezado_evt <- "ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion";
-		save encabezado_evt to: log_eventos_path rewrite: true;
+		string encabezado_evt_hist <- "ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion,escenario";
+		save encabezado_evt_hist to: log_eventos_hist_path rewrite: true;
 		write ">>> GENERACIÓN DE ARCHIVOS LOG CSV CONFIGURADA EN /results/ <<<";
 	}
 
@@ -195,6 +210,7 @@ loop c over: connection {
 			emergency_containment <- true;
 			string fila_alerta <- string(cycle) + ",-,ALERTA_CRITICA,-,-,-," + string(length(computer where each.infected)) + ",-";
 			save fila_alerta to: log_eventos_path rewrite: false;
+			save fila_alerta + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			write "==============================";
 			write " ALERTA CRITICA - BDI GLOBAL ";
 			write " RED COMPROMETIDA AL " + string(int(tasa)) + "%";
@@ -204,8 +220,9 @@ loop c over: connection {
 				isolated <- true;
 				intention <- "isolated";
 				write "*** AISLADO EMERGENCIA *** " + nombre;
-				string fila_emergencia <- string(cycle) + "," + nombre + ",AISLADO_EMERGENCIA,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
+					string fila_emergencia <- string(cycle) + "," + nombre + ",AISLADO_EMERGENCIA,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
 				save fila_emergencia to: log_eventos_path rewrite: false;
+					save fila_emergencia + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			}
 
 		}
@@ -234,6 +251,7 @@ loop c over: connection {
 					string fila_defensa <- string(cycle) + "," + nombre + ",Aislamiento_Contencion,Global,0.0," + string(patch_level) + "," + string(length(computer where
 					each.infected)) + ",isolated";
 					save fila_defensa to: log_eventos_path rewrite: false;
+					save fila_defensa + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 				}
 
 			} else {
@@ -368,6 +386,7 @@ species computer {
 			write "*** BDI AISLAMIENTO VOLUNTARIO *** " + nombre + " | riesgo=" + string(int(bel_riesgo)) + " | vecinos_infectados=" + string(bel_vecinos_infectados);
 			string fila_aislado <- string(cycle) + "," + nombre + ",AISLADO,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
 			save fila_aislado to: log_eventos_path rewrite: false;
+			save fila_aislado + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			return;
 		}
 
@@ -381,6 +400,7 @@ species computer {
 			write "*** BDI PARCHEO *** " + nombre + " => patch_level=" + string(patch_level);
 			string fila_parcheo <- string(cycle) + "," + nombre + ",PARCHEO,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",patch";
 			save fila_parcheo to: log_eventos_path rewrite: false;
+			save fila_parcheo + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			return;
 		}
 
@@ -454,6 +474,7 @@ species computer {
 
 			// Guarda sumando líneas al CSV existente (Se eliminó type: "text")
 			save fila_evento to: log_eventos_path rewrite: false;
+			save fila_evento + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 		}
 
 		cooldown <- rnd(cooldown_max) + cooldown_min;

@@ -5,7 +5,8 @@
         <span class="header-tag">BDI · GAMA Platform</span>
         <h1 class="header-title">WannaCry Network Simulation</h1>
       </div>
-      <div class="header-stats">
+      <div class="header-actions">
+        <div class="header-stats">
         <div class="stat" :class="{ danger: stats.infectados > 0 }">
           <span class="stat-value">{{ stats.infectados }}</span>
           <span class="stat-label">Infectados</span>
@@ -23,6 +24,10 @@
           <span class="stat-label">Ciclo</span>
         </div>
         <div class="pulse-dot" :class="pollingActive ? 'active' : 'inactive'"></div>
+        </div>
+        <button class="report-button" type="button" @click="openFinalReport">
+          Informe final
+        </button>
       </div>
     </header>
 
@@ -53,6 +58,50 @@
         </tr>
       </template>
     </ChartsGrid>
+
+    <transition name="report-fade">
+      <div v-if="showFinalReport" class="report-overlay" @click.self="closeFinalReport">
+        <div class="report-panel" role="dialog" aria-modal="true" aria-labelledby="final-report-title">
+          <div class="report-panel-header">
+            <div>
+              <div class="report-kicker">Resumen de simulación</div>
+              <h2 id="final-report-title">Informe final</h2>
+            </div>
+            <button class="report-close" type="button" @click="closeFinalReport">Cerrar</button>
+          </div>
+
+          <div v-if="reportLoading" class="report-state">Cargando informe...</div>
+          <div v-else-if="reportError" class="report-state error">{{ reportError }}</div>
+
+          <div v-else class="report-table-frame">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>N° Simulación</th>
+                  <th>Nivel Max Parche</th>
+                  <th>Tiempo de Infección</th>
+                  <th>Número Infectados</th>
+                  <th>Número Asalvo</th>
+                  <th>Nivel Firewall</th>
+                  <th>Nivel Contención</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, index) in finalReportRows" :key="row['N° Simulación'] || index">
+                  <td>{{ row['N° Simulación'] }}</td>
+                  <td>{{ row['Nivel Max Parche'] }}</td>
+                  <td>{{ row['Tiempo de Infección'] }}</td>
+                  <td>{{ row['Número Infectados'] }}</td>
+                  <td>{{ row['Número Asalvo'] }}</td>
+                  <td>{{ row['Nivel Firewall'] }}</td>
+                  <td>{{ row['Nivel Contención'] }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -61,7 +110,7 @@ import { ref, onUnmounted, computed, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import CytoscapeMap from './components/CytoscapeMap.vue'
 import ChartsGrid from './components/ChartsGrid.vue'
-import { fetchCSV, cleanRow } from './composables/usePolling'
+import { fetchCSV, fetchCSVSkipFirstLine, cleanRow } from './composables/usePolling'
 
 
 const BASE = '/results'
@@ -80,6 +129,10 @@ let pollingStarted = false    // Bandera para evitar múltiples inicios
 const pollingActive = ref(false)
 const eventos = ref([])
 const nodoEstado = ref({})
+const showFinalReport = ref(false)
+const reportLoading = ref(false)
+const reportError = ref('')
+const finalReportRows = ref([])
 
 const stats = computed(() => {
   const vals = Object.values(nodoEstado.value)
@@ -91,6 +144,76 @@ const stats = computed(() => {
 })
 
 const eventosRecientes = computed(() => [...eventos.value].reverse().slice(0, 50))
+
+function formatPercent(value) {
+  const numericValue = Number(value)
+  if (Number.isNaN(numericValue)) return '-'
+  return numericValue <= 1 ? `${Math.round(numericValue * 100)}%` : `${Math.round(numericValue)}%`
+}
+
+function parseNumber(value) {
+  const numericValue = Number(value)
+  return Number.isNaN(numericValue) ? null : numericValue
+}
+
+async function openFinalReport() {
+  showFinalReport.value = true
+  reportLoading.value = true
+  reportError.value = ''
+  finalReportRows.value = []
+
+  try {
+    const [generalRowsRaw, eventRowsRaw] = await Promise.all([
+      fetchCSVSkipFirstLine(`${BASE}/log_general_hist.csv`),
+      fetchCSV(`${BASE}/log_eventos_hist.csv`),
+    ])
+
+    const generalRows = generalRowsRaw
+      .map(cleanRow)
+      .filter(row => row.escenario && row.total_nodos && row.firewall_strength && row.containment_threshold)
+    const eventRows = eventRowsRaw
+      .map(cleanRow)
+      .filter(row => row.escenario && row.ciclo && row.evento)
+
+    const rows = generalRows.map((general, index) => {
+      const escenario = general.escenario || `Simulación ${index + 1}`
+      const scenarioEvents = eventRows.filter(row => row.escenario === escenario)
+      const infectionCycles = scenarioEvents
+        .filter(row => row.evento === 'Infeccion_Exitosa')
+        .map(row => parseNumber(row.ciclo))
+        .filter(value => value !== null)
+      const maxPatchLevel = scenarioEvents
+        .map(row => parseNumber(row.patch_lv))
+        .filter(value => value !== null)
+        .reduce((max, value) => Math.max(max, value), null)
+      const lastEvent = scenarioEvents[scenarioEvents.length - 1] || {}
+      const totalNodos = parseNumber(general.total_nodos) ?? 0
+      const infectadosFinal = parseNumber(lastEvent.infectados_total) ?? 0
+      const tiempoInfeccion = infectionCycles.length ? Math.min(...infectionCycles) : '-'
+
+      return {
+        'N° Simulación': index + 1,
+        'Nivel Max Parche': maxPatchLevel === null ? '-' : `${maxPatchLevel}%`,
+        'Tiempo de Infección': tiempoInfeccion === '-' ? '-' : `Ciclo ${tiempoInfeccion}`,
+        'Número Infectados': infectadosFinal,
+        'Número Asalvo': Math.max(totalNodos - infectadosFinal, 0),
+        'Nivel Firewall': general.firewall_strength != null ? formatPercent(general.firewall_strength) : '-',
+        'Nivel Contención': general.containment_threshold != null ? formatPercent(general.containment_threshold) : '-',
+        escenario,
+      }
+    })
+
+    finalReportRows.value = rows
+  } catch (error) {
+    reportError.value = `No se pudo cargar el informe: ${error.message}`
+  } finally {
+    reportLoading.value = false
+  }
+}
+
+function closeFinalReport() {
+  showFinalReport.value = false
+}
 
 // ── CYTOSCAPE callbacks ───────────────────────────────────
 function onCyInit(initialEstado) {
@@ -400,6 +523,8 @@ function badgeClass(evento) {
   border-bottom: 1px solid #1e293b;
 }
 
+.header-actions { display: flex; align-items: center; gap: 14px; }
+
 .header-tag {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
@@ -423,6 +548,25 @@ function badgeClass(evento) {
 .pulse-dot.inactive { background: #334155; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3) } 50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.1) } }
 
+.report-button {
+  border: 1px solid #334155;
+  background: linear-gradient(135deg, #f97316, #fb7185);
+  color: #0a0f1e;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.report-button:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow: 0 14px 28px rgba(249, 115, 22, 0.24); }
+.report-button:active { transform: translateY(0); }
+
 .map-section { padding: 16px 24px 8px; }
 .section-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
 
@@ -443,4 +587,130 @@ function badgeClass(evento) {
 .badge-orange { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
 .badge-green { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
 .badge-gray { background: rgba(51, 65, 85, 0.5); color: #64748b; }
+
+.report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.report-panel {
+  width: min(1180px, 100%);
+  max-height: min(84vh, 900px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: linear-gradient(180deg, #0d1526 0%, #0a1020 100%);
+  border: 1px solid #334155;
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(2, 6, 23, 0.6);
+  padding: 20px;
+}
+
+.report-panel-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #f97316;
+  margin-bottom: 4px;
+}
+
+.report-panel h2 {
+  font-size: 22px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.report-close {
+  border: 1px solid #334155;
+  background: transparent;
+  color: #cbd5e1;
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.report-table-frame {
+  overflow: auto;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.report-table th,
+.report-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #1e293b;
+  text-align: left;
+}
+
+.report-table th {
+  position: sticky;
+  top: 0;
+  background: #0d1526;
+  color: #94a3b8;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.report-table td {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.report-state {
+  padding: 28px;
+  text-align: center;
+  color: #cbd5e1;
+  border: 1px dashed #334155;
+  border-radius: 14px;
+}
+
+.report-state.error { color: #fca5a5; }
+
+.report-fade-enter-active,
+.report-fade-leave-active { transition: opacity 0.18s ease; }
+.report-fade-enter-from,
+.report-fade-leave-to { opacity: 0; }
+
+@media (max-width: 1100px) {
+  .header { align-items: flex-start; gap: 12px; flex-direction: column; }
+  .header-actions { width: 100%; justify-content: space-between; }
+  .report-panel { max-height: 88vh; }
+}
+
+@media (max-width: 760px) {
+  .header-actions { flex-direction: column; align-items: flex-start; }
+  .header-stats { flex-wrap: wrap; gap: 12px; }
+  .report-overlay { padding: 12px; }
+  .report-panel { padding: 16px; }
+  .report-panel-header { flex-direction: column; }
+}
 </style>

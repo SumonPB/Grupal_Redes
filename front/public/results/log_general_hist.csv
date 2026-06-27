@@ -1,0 +1,7 @@
+encabezado_hist_gen
+escenario,firewall_strength,initial_patch_level,containment_threshold,total_nodos,total_salas,total_pcs,total_switches,total_firewall
+Personalizado,0.7,10.0,30.0,7,1,4,1,1
+escenario,firewall_strength,initial_patch_level,containment_threshold,total_nodos,total_salas,total_pcs,total_switches,total_firewall
+Personalizado,0.7,10.0,30.0,7,1,4,1,1
+escenario,firewall_strength,initial_patch_level,containment_threshold,total_nodos,total_salas,total_pcs,total_switches,total_firewall
+Personalizado,0.7,10.0,30.0,7,1,4,1,1

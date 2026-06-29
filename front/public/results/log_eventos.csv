@@ -1,9 +1,0 @@
-ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion
-0,fw1,PARCHEO,-,-,30,1,patch
-1,fw1,PARCHEO,-,-,40,1,patch
-2,fw1,PARCHEO,-,-,50,1,patch
-32,fw1,Infeccion_Exitosa,internet,0.07000000000000002,50,2,spread
-33,sw1,PARCHEO,-,-,24,2,patch
-33,sw1,Infeccion_Exitosa,fw1,0.294,24,3,spread
-34,sw1,Aislamiento_Contencion,Global,0.0,24,3,isolated
-34,fw1,Aislamiento_Contencion,Global,0.0,50,3,isolated

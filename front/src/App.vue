@@ -111,7 +111,7 @@ import { ref, onUnmounted, computed } from 'vue'
 import * as echarts from 'echarts'
 import CytoscapeMap from './components/CytoscapeMap.vue'
 import ChartsGrid from './components/ChartsGrid.vue'
-import { fetchCSV, fetchCSVSkipFirstLine, cleanRow } from './composables/usePolling'
+import { fetchCSV, fetchCSVSkipFirstLine, cleanRow } from './components/usePolling'
 
 const BASE = '/results'
 
@@ -144,16 +144,7 @@ const stats = computed(() => {
 
 const eventosRecientes = computed(() => [...eventos.value].reverse().slice(0, 50))
 
-function formatPercent(value) {
-  const numericValue = Number(value)
-  if (Number.isNaN(numericValue)) return '-'
-  return numericValue <= 1 ? `${Math.round(numericValue * 100)}%` : `${Math.round(numericValue)}%`
-}
 
-function parseNumber(value) {
-  const numericValue = Number(value)
-  return Number.isNaN(numericValue) ? null : numericValue
-}
 
 /**
  * Traductor de tiempo operativo: Convierte ciclos de GAMA en días y horas reales (1 Ciclo = 1 Hora).
@@ -182,101 +173,43 @@ async function openFinalReport() {
   finalReportRows.value = []
 
   try {
-    // Estampilla temporal para romper la memoria caché del navegador web (?t=)
     const t = Date.now()
+    const rawRows = await fetchCSV(`${BASE}/log_informes.csv?t=${t}`)
+    const rows = rawRows.map(cleanRow)
 
-    // Carga paralela de memoria histórica (experimentos batch) y memoria en vivo (personalizada)
-    const [generalHistRaw, eventHistRaw, generalLiveRaw, eventLiveRaw] = await Promise.all([
-      fetchCSVSkipFirstLine(`${BASE}/log_general_hist.csv?t=${t}`).catch(() => []),
-      fetchCSV(`${BASE}/log_eventos_hist.csv?t=${t}`).catch(() => []),
-      fetchCSVSkipFirstLine(`${BASE}/log_general.csv?t=${t}`).catch(() => []),
-      fetchCSV(`${BASE}/log_eventos.csv?t=${t}`).catch(() => []),
-    ])
+    finalReportRows.value = rows.map((row, index) => {
+      const inicio = parseNumber(row.ciclo_inicio_infeccion)
+      const fin = parseNumber(row.ciclo_fin_contencion)
+      const cicloFinal = parseNumber(row.ciclo_final)
 
-    // Fusionamos ambos repositorios de datos en un solo buffer temporal
-    const allGeneralRows = [...generalHistRaw, ...generalLiveRaw].map(cleanRow)
-    const allEventRows = [...eventHistRaw, ...eventLiveRaw].map(cleanRow)
-
-    const generalRows = allGeneralRows.filter(row => row.escenario && row.total_nodos)
-    const eventRows = allEventRows.filter(row => row.escenario && row.ciclo && row.evento)
-
-    // Extraemos la lista limpia de escenarios sin duplicar nombres
-    const escenariosUnicos = [...new Set(generalRows.map(r => r.escenario))]
-
-    const rows = escenariosUnicos.map((escenario, index) => {
-      const general = generalRows.filter(r => r.escenario === escenario).slice(-1)[0] || {}
-      const scenarioEvents = eventRows.filter(row => row.escenario === escenario)
-      
-      // 1. Detectar ciclo inicial (momento exacto de la primera infección WannaCry)
-      const infectionCycles = scenarioEvents
-        .filter(row => row.evento === 'Infeccion_Exitosa')
-        .map(row => parseNumber(row.ciclo))
-        .filter(value => value !== null)
-      const cicloInicio = infectionCycles.length ? Math.min(...infectionCycles) : null
-
-      // 2. Detectar ciclo final (momento en que la red quedó contenida y aislada)
-      const isolationCycles = scenarioEvents
-        .filter(row => ['AISLADO', 'AISLADO_EMERGENCIA', 'Aislamiento_Contencion'].includes(row.evento))
-        .map(row => parseNumber(row.ciclo))
-        .filter(value => value !== null && (cicloInicio === null || value >= cicloInicio))
-      const cicloFin = isolationCycles.length ? Math.max(...isolationCycles) : null
-
-      // 3. Diferencia $\Delta C$ traducida automáticamente a escala humana
-      let textoTiempoInfeccion = '-'
-      if (cicloInicio !== null) {
-        if (cicloFin !== null) {
-          const delta = cicloFin - cicloInicio
-          textoTiempoInfeccion = `${delta}h (${convertirTiempoReal(delta)})`
+      let textoTiempo = '-'
+      if (inicio !== null && inicio >= 0) {
+        if (fin !== null && fin >= 0) {
+          const delta = fin - inicio
+          textoTiempo = `${delta}h (${convertirTiempoReal(delta)})`
         } else {
-          // El brote inició pero concluyó la simulación (150h) sin lograr aislar toda la red
-          const delta = 150 - cicloInicio
-          textoTiempoInfeccion = `> ${delta}h (Sin contención total)`
+          const delta = (cicloFinal ?? 0) - inicio
+          textoTiempo = `> ${delta}h (Sin contención total)`
         }
       }
 
-      const maxPatchLevel = scenarioEvents
-        .map(row => parseNumber(row.patch_lv))
-        .filter(value => value !== null)
-        .reduce((max, value) => Math.max(max, value), null)
-        
-      const lastEvent = scenarioEvents[scenarioEvents.length - 1] || {}
-      
-      // --- INICIO DEL FILTRO PURIFICADOR (EXCLUYE A INTERNET) ---
-      const rawTotal = parseNumber(general.total_nodos) ?? 0
-      const rawInfectados = parseNumber(lastEvent.infectados_total)
-
-      // 1. Total real de máquinas de la red interna (Si el CSV traía 7, ahora son 6 reales)
-      const totalLAN = rawTotal > 0 ? rawTotal - 1 : 0
-
-      // 2. Infectados reales de la red interna (Si el CSV traía 1 por Internet, ahora es 0)
-      const infectadosLAN = rawInfectados !== null 
-        ? Math.max(0, rawInfectados - 1) 
-        : (escenario === 'Personalizado' ? stats.value.infectados + stats.value.aislados : 0)
-
-      // 3. Equipos sanos a salvo
-      const asalvoLAN = Math.max(0, totalLAN - infectadosLAN)
-      // --- FIN DEL FILTRO PURIFICADOR ---
-
       return {
         'N° Simulación': index + 1,
-        'Nivel Max Parche': maxPatchLevel === null ? (general.initial_patch_level ? `${general.initial_patch_level}%` : '-') : `${maxPatchLevel}%`,
-        'Tiempo de Infección': textoTiempoInfeccion,
-        'Número Infectados': infectadosLAN, // <-- Inyectamos el dato limpio
-        'Número Asalvo': asalvoLAN,         // <-- Inyectamos el dato limpio
-        'Nivel Firewall': general.firewall_strength != null ? formatPercent(general.firewall_strength) : '-',
-        'Nivel Contención': general.containment_threshold != null ? formatPercent(general.containment_threshold) : '-',
-        escenario,
+        escenario: row.escenario,
+        'Nivel Max Parche': row.nivel_max_parche != null ? `${row.nivel_max_parche}%` : '-',
+        'Tiempo de Infección': textoTiempo,
+        'Número Infectados': row.numero_infectados,
+        'Número Asalvo': row.numero_asalvo,
+        'Nivel Firewall': row.nivel_firewall != null ? `${row.nivel_firewall}%` : '-',
+        'Nivel Contención': row.nivel_contencion != null ? `${row.nivel_contencion}%` : '-',
       }
     })
-
-    finalReportRows.value = rows
   } catch (error) {
     reportError.value = `No se pudo cargar el informe: ${error.message}`
   } finally {
     reportLoading.value = false
   }
 }
-
 function closeFinalReport() {
   showFinalReport.value = false
 }
@@ -496,6 +429,14 @@ function badgeClass(evento) {
   if (evento === 'ALERTA_CRITICA') return 'badge-orange'
   if (evento === 'PARCHEO') return 'badge-green'
   return 'badge-gray'
+}
+function parseNumber(value) {
+  if (value === '' || value === null || value === undefined) {
+    return null
+  }
+
+  const n = Number(value)
+  return Number.isNaN(n) ? null : n
 }
 </script>
 

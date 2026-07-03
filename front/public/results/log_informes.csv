@@ -1,0 +1,8 @@
+encabezado_informe
+escenario,nivel_max_parche,ciclo_inicio_infeccion,ciclo_fin_contencion,ciclo_final,numero_infectados,numero_asalvo,nivel_firewall,nivel_contencion
+E1 - Real 2017,56,12,148,148,5,1,10,5
+E2 - Solo firewall,55,67,87,87,3,3,90,10
+E3 - Solo parches,87,-1,-1,150,0,6,10,20
+E4 - SOC activo,48,0,1,1,1,5,50,80
+E5 - Red segura,100,-1,-1,150,0,6,100,90
+Personalizado,58,9,110,110,3,3,70,30

@@ -6,6 +6,7 @@ species sala {
 	aspect default {
 		draw shape color: rgb(165, 75, 75, 100) border: #black;
 	}
+
 }
 
 global {
@@ -13,7 +14,6 @@ global {
 	file conexiones_file <- file("../includes/conexiones.shp");
 	file salas_file <- file("../includes/sala.shp");
 	geometry shape <- envelope(nodos_file);
-	
 	float firewall_strength <- 0.7;
 	float containment_threshold <- 30.0;
 	bool emergency_containment <- false;
@@ -24,13 +24,19 @@ global {
 	int num_escenario <- 0;
 
 	// Rutas exactas conectadas a tu carpeta pública de Vue
-	string log_general_path  <- "../front/public/results/log_general.csv";
+	string log_general_path <- "../front/public/results/log_general.csv";
 	string log_general_hist_path <- "../front/public/results/log_general_hist.csv";
-	string log_eventos_path  <- "../front/public/results/log_eventos.csv";
+	string log_eventos_path <- "../front/public/results/log_eventos.csv";
 	string log_eventos_hist_path <- "../front/public/results/log_eventos_hist.csv";
+	string log_informes_path <- "../front/public/results/log_informes.csv";
+	int max_ciclos <- 150; // techo también para el experimento manual
+	int ciclo_inicio_infeccion <- -1;
+	int ciclo_fin_contencion <- -1;
+	bool contencion_total <- false;
+	bool informe_guardado <- false;
 
 	init {
-		// Configuración automática de los 5 escenarios de tu tabla
+	// Configuración automática de los 5 escenarios de tu tabla
 		if num_escenario = 1 {
 			firewall_strength <- 0.1;
 			initial_patch_level <- 5.0;
@@ -67,7 +73,12 @@ global {
 				scenario_label <- "E4 - SOC activo";
 			} else if int(firewall_strength * 10.0) = 10 and int(initial_patch_level) = 100 and int(containment_threshold) = 90 {
 				scenario_label <- "E5 - Red segura";
-			}
+			} }
+
+		if !file_exists(log_informes_path) {
+			string
+			encabezado_informe <- "escenario,nivel_max_parche,ciclo_inicio_infeccion,ciclo_fin_contencion,ciclo_final,numero_infectados,numero_asalvo,nivel_firewall,nivel_contencion";
+			save encabezado_informe to: log_informes_path rewrite: true;
 		}
 
 		create sala from: salas_file {
@@ -84,12 +95,13 @@ global {
 			is_switch <- tipoNodo = "switch";
 			infected <- is_internet;
 			isolated <- false;
-			patch_level <- int(initial_patch_level) + rnd(10);
+			patch_level <- min(100, int(initial_patch_level + rnd(10)));
 			if tipoNodo = "pc" or is_server or is_switch or is_firewall {
 				open_ports <- [445, 3389, 80];
 			} else {
 				open_ports <- [];
 			}
+
 		}
 
 		create connection from: conexiones_file {
@@ -101,6 +113,7 @@ global {
 				source <- first(so);
 				target <- first(de);
 			}
+
 		}
 
 		int t_nodos <- length(computer);
@@ -112,7 +125,8 @@ global {
 		// LOG 1: General Live (para gráficos en tiempo real)
 		string encabezado_gen <- "total_nodos,total_salas,total_pcs,total_switches,total_firewall,firewall_strength,containment_threshold";
 		save encabezado_gen to: log_general_path rewrite: true;
-		string datos_gen <- string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls) + "," + string(firewall_strength) + "," + string(containment_threshold);
+		string
+		datos_gen <- string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls) + "," + string(firewall_strength) + "," + string(containment_threshold);
 		save datos_gen to: log_general_path rewrite: false;
 
 		// LOG 2: Eventos Live
@@ -120,25 +134,34 @@ global {
 		save encabezado_evt to: log_eventos_path rewrite: true;
 
 		// LOG 3 y 4: Históricos Acumulativos (Se resetean solo en la simulación 1 o en modo GUI manual)
-		if num_escenario <= 1 {
+		if !file_exists(log_general_hist_path) {
 			string encabezado_hist_gen <- "escenario,firewall_strength,initial_patch_level,containment_threshold,total_nodos,total_salas,total_pcs,total_switches,total_firewall";
 			save encabezado_hist_gen to: log_general_hist_path rewrite: true;
+		}
 
+		if !file_exists(log_eventos_hist_path) {
 			string encabezado_evt_hist <- "ciclo,nodo,evento,desde,probabilidad,patch_lv,infectados_total,intencion,escenario";
 			save encabezado_evt_hist to: log_eventos_hist_path rewrite: true;
 		}
 
-		string datos_hist_gen <- scenario_label + "," + string(firewall_strength) + "," + string(initial_patch_level) + "," + string(containment_threshold) + "," + string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls);
+		string
+		datos_hist_gen <- scenario_label + "," + string(firewall_strength) + "," + string(initial_patch_level) + "," + string(containment_threshold) + "," + string(t_nodos) + "," + string(t_salas) + "," + string(t_pcs) + "," + string(t_switches) + "," + string(t_firewalls);
 		save datos_hist_gen to: log_general_hist_path rewrite: false;
 
 		// LOGS ESTÁTICOS DE TOPOLOGÍA
 		save "id,nombre,tipo" to: "../front/public/results/log_nodos.csv" rewrite: true;
 		loop n over: computer {
 			string tipo_nodo <- "pc";
-			if n.is_internet { tipo_nodo <- "internet"; }
-			else if n.is_firewall { tipo_nodo <- "firewall"; }
-			else if n.is_switch { tipo_nodo <- "switch"; }
-			else if n.is_server { tipo_nodo <- "server"; }
+			if n.is_internet {
+				tipo_nodo <- "internet";
+			} else if n.is_firewall {
+				tipo_nodo <- "firewall";
+			} else if n.is_switch {
+				tipo_nodo <- "switch";
+			} else if n.is_server {
+				tipo_nodo <- "server";
+			}
+
 			save string(n.id) + "," + n.nombre + "," + tipo_nodo to: "../front/public/results/log_nodos.csv" rewrite: false;
 		}
 
@@ -146,19 +169,28 @@ global {
 		loop c over: connection {
 			string tipo_source <- "pc";
 			string tipo_target <- "pc";
-			if c.source.is_internet { tipo_source <- "internet"; }
-			else if c.source.is_firewall { tipo_source <- "firewall"; }
-			else if c.source.is_switch { tipo_source <- "switch"; }
-			else if c.source.is_server { tipo_source <- "server"; }
+			if c.source.is_internet {
+				tipo_source <- "internet";
+			} else if c.source.is_firewall {
+				tipo_source <- "firewall";
+			} else if c.source.is_switch {
+				tipo_source <- "switch";
+			} else if c.source.is_server {
+				tipo_source <- "server";
+			}
 
-			if c.target.is_internet { tipo_target <- "internet"; }
-			else if c.target.is_firewall { tipo_target <- "firewall"; }
-			else if c.target.is_switch { tipo_target <- "switch"; }
-			else if c.target.is_server { tipo_target <- "server"; }
+			if c.target.is_internet {
+				tipo_target <- "internet";
+			} else if c.target.is_firewall {
+				tipo_target <- "firewall";
+			} else if c.target.is_switch {
+				tipo_target <- "switch";
+			} else if c.target.is_server {
+				tipo_target <- "server";
+			}
 
 			save c.source.nombre + "," + c.target.nombre + "," + tipo_source + "," + tipo_target to: "../front/public/results/log_topologia.csv" rewrite: false;
-		}
-	}
+		} }
 
 	reflex BDI_global_perception {
 		int total_nodos <- length(computer where !each.is_internet);
@@ -176,7 +208,9 @@ global {
 				save fila_emergencia to: log_eventos_path rewrite: false;
 				save fila_emergencia + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			}
+
 		}
+
 	}
 
 	reflex BDI_global_containment {
@@ -188,12 +222,16 @@ global {
 				ask computer where (each.infected and !each.is_internet) {
 					isolated <- true;
 					intention <- "isolated";
-					string fila_defensa <- string(cycle) + "," + nombre + ",Aislamiento_Contencion,Global,0.0," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
+					string fila_defensa <- string(cycle) + "," + nombre + ",Aislamiento_Contencion,Global,0.0," + string(patch_level) + "," + string(length(computer where
+					each.infected)) + ",isolated";
 					save fila_defensa to: log_eventos_path rewrite: false;
 					save fila_defensa + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 				}
+
 			}
+
 		}
+
 	}
 
 	reflex emergency_check {
@@ -205,9 +243,66 @@ global {
 				isolated <- true;
 				intention <- "isolated";
 			}
+
 		}
+
 	}
+
+reflex verificar_contencion_total {
+
+    if ciclo_inicio_infeccion != -1 and !contencion_total {
+
+        int infectados_activos <- length(
+            computer where (
+                each.infected
+                and !each.isolated
+                and !each.is_internet
+            )
+        );
+
+        write "Cycle=" + cycle
+            + " infectados=" + infectados_activos;
+
+        if infectados_activos = 0 {
+
+            contencion_total <- true;
+            ciclo_fin_contencion <- cycle;
+
+            write "CONTENCION TOTAL";
+
+            do pause;
+        }
+    }
 }
+
+reflex guardar_informe_final {
+    if !informe_guardado
+       and (contencion_total or cycle = max_ciclos) {
+
+        informe_guardado <- true;
+
+        int total_lan <- length(computer where !each.is_internet);
+        int infectados_lan <- length(computer where (each.infected and !each.is_internet));
+        int asalvo_lan <- total_lan - infectados_lan;
+        int max_parche <- (total_lan > 0)
+            ? max(computer where !each.is_internet collect each.patch_level)
+            : 0;
+
+        string fila_informe <-
+            scenario_label + ","
+            + string(max_parche) + ","
+            + string(ciclo_inicio_infeccion) + ","
+            + string(ciclo_fin_contencion) + ","
+            + string(cycle) + ","
+            + string(infectados_lan) + ","
+            + string(asalvo_lan) + ","
+            + string(int(firewall_strength * 100)) + ","
+            + string(int(containment_threshold));
+
+        save fila_informe to: log_informes_path rewrite: false;
+    }
+}
+ }
 
 species computer {
 	int id;
@@ -219,18 +314,15 @@ species computer {
 	bool infected <- false;
 	bool isolated <- false;
 	bool detected <- false;
-
 	bool bel_amenaza_cercana <- false;
 	bool bel_red_comprometida <- false;
 	bool bel_soy_vulnerable <- false;
 	int bel_vecinos_infectados <- 0;
 	float bel_riesgo <- 0.0;
-
 	bool des_sobrevivir <- true;
 	bool des_infectar <- false;
 	bool des_aislarse <- false;
 	bool des_parchear <- false;
-
 	string intention <- "normal";
 	list<int> open_ports <- [];
 	int patch_level <- 0;
@@ -241,8 +333,12 @@ species computer {
 		int infectados <- 0;
 		loop c over: links {
 			computer vecino <- (c.source = self) ? c.target : c.source;
-			if vecino.infected { infectados <- infectados + 1; }
+			if vecino.infected {
+				infectados <- infectados + 1;
+			}
+
 		}
+
 		bel_vecinos_infectados <- infectados;
 		bel_amenaza_cercana <- infectados > 0;
 		bel_riesgo <- float(infectados) * 25.0;
@@ -260,18 +356,41 @@ species computer {
 	}
 
 	reflex BDI_planning {
-		if isolated { intention <- "isolated"; return; }
-		if des_aislarse and des_sobrevivir and bel_riesgo > 50.0 {
-			if rnd(100) < containment_threshold { intention <- "isolate"; return; }
+		if isolated {
+			intention <- "isolated";
+			return;
 		}
-		if des_parchear and !infected { intention <- "patch"; return; }
-		if des_infectar { intention <- "spread"; return; }
+
+		if des_aislarse and des_sobrevivir and bel_riesgo > 50.0 {
+			if rnd(100) < containment_threshold {
+				intention <- "isolate";
+				return;
+			}
+
+		}
+
+		if des_parchear and !infected {
+			intention <- "patch";
+			return;
+		}
+
+		if des_infectar {
+			intention <- "spread";
+			return;
+		}
+
 		intention <- "normal";
 	}
 
 	reflex BDI_execute {
-		if cooldown > 0 { cooldown <- cooldown - 1; }
-		if intention = "isolated" { return; }
+		if cooldown > 0 {
+			cooldown <- cooldown - 1;
+		}
+
+		if intention = "isolated" {
+			return;
+		}
+
 		if intention = "isolate" {
 			isolated <- true;
 			intention <- "isolated";
@@ -280,61 +399,104 @@ species computer {
 			save fila_aislado + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			return;
 		}
+
 		if intention = "patch" {
 			patch_level <- min(100, patch_level + 10);
-			if patch_level >= 50 { bel_soy_vulnerable <- false; des_parchear <- false; }
+			if patch_level >= 50 {
+				bel_soy_vulnerable <- false;
+				des_parchear <- false;
+			}
+
 			string fila_parcheo <- string(cycle) + "," + nombre + ",PARCHEO,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",patch";
 			save fila_parcheo to: log_eventos_path rewrite: false;
 			save fila_parcheo + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 			return;
 		}
-		if intention = "spread" { do spread_action; return; }
+
+		if intention = "spread" {
+			do spread_action;
+			return;
+		}
+
 	}
 
 	action spread_action {
-		if cooldown > 0 or isolated { return; }
+		if cooldown > 0 or isolated {
+			return;
+		}
+
 		list<connection> links <- connection where (each.source = self or each.target = self);
-		if empty(links) { return; }
+		if empty(links) {
+			return;
+		}
+
 		connection c <- one_of(links);
 		computer destino <- (c.source = self) ? c.target : c.source;
-		if destino.is_internet or destino.isolated or destino.infected { return; }
+		if destino.is_internet or destino.isolated or destino.infected {
+			return;
+		}
 
 		float p <- 0.35;
-		if destino.is_firewall { p <- p * (1.0 - firewall_strength); }
-		if 445 in destino.open_ports { p <- p * (1.0 - destino.patch_level / 150.0); }
+		if destino.is_firewall {
+			p <- p * (1.0 - firewall_strength);
+		}
+
+		if 445 in destino.open_ports {
+			p <- p * (1.0 - destino.patch_level / 150.0);
+		}
 
 		if flip(p) {
 			destino.infected <- true;
 			destino.detected <- false;
-			string fila_evento <- string(cycle) + "," + destino.nombre + ",Infeccion_Exitosa," + self.nombre + "," + string(p) + "," + string(destino.patch_level) + "," + string(length(computer where each.infected)) + "," + self.intention;
+			if world.ciclo_inicio_infeccion = -1 {
+				world.ciclo_inicio_infeccion <- cycle;
+			}
+
+			string
+			fila_evento <- string(cycle) + "," + destino.nombre + ",Infeccion_Exitosa," + self.nombre + "," + string(p) + "," + string(destino.patch_level) + "," + string(length(computer
+			where each.infected)) + "," + self.intention;
 			save fila_evento to: log_eventos_path rewrite: false;
 			save fila_evento + "," + scenario_label to: log_eventos_hist_path rewrite: false;
 		}
+
 		cooldown <- rnd(cooldown_max) + cooldown_min;
 	}
 
 	aspect default {
 		float tam <- 0.2; // Escala original exacta
-		if infected { draw circle(tam) color: #red; }
-		else if is_firewall { draw square(tam) color: #blue; }
-		else if is_switch { draw square(tam) color: #gray; }
-		else if is_internet { draw circle(tam) color: #yellow; }
-		else if is_server { draw square(tam) color: #purple; }
-		else { draw circle(tam) color: #green; }
-		if isolated { draw circle(tam * 1.4) color: #black; }
+		if infected {
+			draw circle(tam) color: #red;
+		} else if is_firewall {
+			draw square(tam) color: #blue;
+		} else if is_switch {
+			draw square(tam) color: #gray;
+		} else if is_internet {
+			draw circle(tam) color: #yellow;
+		} else if is_server {
+			draw square(tam) color: #purple;
+		} else {
+			draw circle(tam) color: #green;
+		}
+
+		if isolated {
+			draw circle(tam * 1.4) color: #black;
+		}
+
 		draw string(nombre + " [" + intention + "]") at: location + {0, -0.5} color: #black font: font("SansSerif", 8, #bold);
-	}
-}
+	} }
 
 species connection {
 	computer source;
 	computer target;
+
 	aspect default {
 		draw line([source.location, target.location]) color: #orange width: 2;
 	}
+
 }
 
-experiment Infeccion type: gui {
+experiment Infeccion type: gui 
+until: (contencion_total or cycle > max_ciclos){
 	parameter "Escenario Predefinido (0=Manual)" var: num_escenario among: [0, 1, 2, 3, 4, 5] category: "Escenarios";
 	parameter "Nivel de Contencion (%)" type: float var: containment_threshold min: 0.0 max: 100.0 category: "Seguridad BDI";
 	parameter "Fuerza Firewall (0-1)" type: float var: firewall_strength min: 0.0 max: 1.0 category: "Seguridad BDI";
@@ -345,12 +507,17 @@ experiment Infeccion type: gui {
 			species connection;
 			species computer;
 		}
+
 		monitor "Infectados" value: length(computer where each.infected);
 		monitor "Sanos" value: length(computer where (!each.infected and !each.is_internet));
 		monitor "Aislados" value: length(computer where each.isolated);
 	}
+
 }
 
-experiment EjecutarEscenariosPredefinidos type: batch repeat: 1 until: (cycle >= 150) {
-	parameter "Escenario" var: num_escenario among: [1, 2, 3, 4, 5];
+experiment EjecutarEscenariosPredefinidos
+type: batch
+repeat: 1
+until: (cycle > max_ciclos) {
+    parameter "Escenario" var: num_escenario among: [1,2,3,4,5];
 }

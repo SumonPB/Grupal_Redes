@@ -12,7 +12,8 @@ species sala {
 global {
 	file nodos_file <- file("../includes/nodos.shp");
 	file conexiones_file <- file("../includes/conexiones.shp");
-	file salas_file <- file("../includes/sala.shp");
+	file salas_file <- file("../includes/salas.shp");
+	file planta_file <- file("../includes/planta.shp");
 	geometry shape <- envelope(nodos_file);
 	float firewall_strength <- 0.7;
 	float containment_threshold <- 30.0;
@@ -36,7 +37,8 @@ global {
 	bool informe_guardado <- false;
 
 	init {
-	// Configuración automática de los 5 escenarios de tu tabla
+		create planta from: planta_file; // creacion del mapa
+		// Configuración automática de los 5 escenarios de tu tabla
 		if num_escenario = 1 {
 			firewall_strength <- 0.1;
 			initial_patch_level <- 5.0;
@@ -248,61 +250,42 @@ global {
 
 	}
 
-reflex verificar_contencion_total {
+	reflex verificar_contencion_total {
+		if ciclo_inicio_infeccion != -1 and !contencion_total {
+			int infectados_activos <- length(computer where (each.infected and !each.isolated and !each.is_internet));
+			write "Cycle=" + cycle + " infectados=" + infectados_activos;
+			if infectados_activos = 0 {
+				contencion_total <- true;
+				ciclo_fin_contencion <- cycle;
+				write "CONTENCION TOTAL";
+				do pause;
+			}
 
-    if ciclo_inicio_infeccion != -1 and !contencion_total {
+		}
 
-        int infectados_activos <- length(
-            computer where (
-                each.infected
-                and !each.isolated
-                and !each.is_internet
-            )
-        );
+	}
 
-        write "Cycle=" + cycle
-            + " infectados=" + infectados_activos;
+	reflex guardar_informe_final {
+		if !informe_guardado and (contencion_total or cycle = max_ciclos) {
+			informe_guardado <- true;
+			int total_lan <- length(computer where !each.is_internet);
+			int infectados_lan <- length(computer where (each.infected and !each.is_internet));
+			int asalvo_lan <- total_lan - infectados_lan;
+			int max_parche <- (total_lan > 0) ? max(computer where !each.is_internet collect each.patch_level) : 0;
+			string
+			fila_informe <- scenario_label + "," + string(max_parche) + "," + string(ciclo_inicio_infeccion) + "," + string(ciclo_fin_contencion) + "," + string(cycle) + "," + string(infectados_lan) + "," + string(asalvo_lan) + "," + string(int(firewall_strength * 100)) + "," + string(int(containment_threshold));
+			save fila_informe to: log_informes_path rewrite: false;
+		}
 
-        if infectados_activos = 0 {
+	} }
 
-            contencion_total <- true;
-            ciclo_fin_contencion <- cycle;
+species planta {
 
-            write "CONTENCION TOTAL";
+	aspect default {
+		draw shape color: #red;
+	}
 
-            do pause;
-        }
-    }
 }
-
-reflex guardar_informe_final {
-    if !informe_guardado
-       and (contencion_total or cycle = max_ciclos) {
-
-        informe_guardado <- true;
-
-        int total_lan <- length(computer where !each.is_internet);
-        int infectados_lan <- length(computer where (each.infected and !each.is_internet));
-        int asalvo_lan <- total_lan - infectados_lan;
-        int max_parche <- (total_lan > 0)
-            ? max(computer where !each.is_internet collect each.patch_level)
-            : 0;
-
-        string fila_informe <-
-            scenario_label + ","
-            + string(max_parche) + ","
-            + string(ciclo_inicio_infeccion) + ","
-            + string(ciclo_fin_contencion) + ","
-            + string(cycle) + ","
-            + string(infectados_lan) + ","
-            + string(asalvo_lan) + ","
-            + string(int(firewall_strength * 100)) + ","
-            + string(int(containment_threshold));
-
-        save fila_informe to: log_informes_path rewrite: false;
-    }
-}
- }
 
 species computer {
 	int id;
@@ -462,28 +445,29 @@ species computer {
 		cooldown <- rnd(cooldown_max) + cooldown_min;
 	}
 
-	aspect default {
-		float tam <- 0.2; // Escala original exacta
-		if infected {
-			draw circle(tam) color: #red;
-		} else if is_firewall {
-			draw square(tam) color: #blue;
-		} else if is_switch {
-			draw square(tam) color: #gray;
-		} else if is_internet {
-			draw circle(tam) color: #yellow;
-		} else if is_server {
-			draw square(tam) color: #purple;
-		} else {
-			draw circle(tam) color: #green;
-		}
-
-		if isolated {
-			draw circle(tam * 1.4) color: #black;
-		}
-
-		draw string(nombre + " [" + intention + "]") at: location + {0, -0.5} color: #black font: font("SansSerif", 8, #bold);
-	} }
+aspect default {
+    float tam <- 45000.0;
+    if isolated {
+        draw circle(tam) color: #black;
+        draw string(nombre) at: location color: #white font: font("SansSerif", 10, #bold) anchor: #center;
+    } else if infected {
+        draw circle(tam) color: #red;
+    } else if is_firewall {
+        draw square(tam) color: #blue;
+    } else if is_switch {
+        draw square(tam) color: #gray;
+    } else if is_internet {
+        draw circle(tam) color: #yellow;
+    } else if is_server {
+        draw square(tam) color: #purple;
+    } else {
+        draw circle(tam) color: #green;
+    }
+    if !isolated{
+    	 draw string(nombre) at: location color: #black font: font("SansSerif", 8, #bold) anchor: #center;
+    }
+   
+} }
 
 species connection {
 	computer source;
@@ -495,14 +479,15 @@ species connection {
 
 }
 
-experiment Infeccion type: gui 
-until: (contencion_total or cycle > max_ciclos){
+experiment Infeccion type: gui until: (contencion_total or cycle > max_ciclos) {
 	parameter "Escenario Predefinido (0=Manual)" var: num_escenario among: [0, 1, 2, 3, 4, 5] category: "Escenarios";
 	parameter "Nivel de Contencion (%)" type: float var: containment_threshold min: 0.0 max: 100.0 category: "Seguridad BDI";
 	parameter "Fuerza Firewall (0-1)" type: float var: firewall_strength min: 0.0 max: 1.0 category: "Seguridad BDI";
 	parameter "Nivel de Parche Inicial (%)" type: float var: initial_patch_level min: 0.0 max: 100.0 category: "Seguridad BDI";
 	output {
 		display mapa_red {
+		//image "../includes/Topografia.png";
+			species planta;
 			species sala;
 			species connection;
 			species computer;
@@ -515,9 +500,6 @@ until: (contencion_total or cycle > max_ciclos){
 
 }
 
-experiment EjecutarEscenariosPredefinidos
-type: batch
-repeat: 1
-until: (cycle > max_ciclos) {
-    parameter "Escenario" var: num_escenario among: [1,2,3,4,5];
+experiment EjecutarEscenariosPredefinidos type: batch repeat: 1 until: (cycle > max_ciclos) {
+	parameter "Escenario" var: num_escenario among: [1, 2, 3, 4, 5];
 }

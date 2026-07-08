@@ -5,11 +5,16 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import cytoscape from 'cytoscape'
+import fcose from 'cytoscape-fcose'
 import { fetchCSVSkipFirstLine, cleanRow } from '../components/usePolling'
+
+// Registrar la extensión fcose (layout que maneja bien compound nodes mixtos)
+cytoscape.use(fcose)
 import { ICON_PC, ICON_PC_INFECTED, ICON_PC_ISOLATED, ICON_FIREWALL, ICON_FIREWALL_INFECTED, ICON_FIREWALL_ISOLATED, ICON_SWITCH, ICON_SWITCH_INFECTED, ICON_SWITCH_ISOLATED, ICON_CLOUD, ICON_SERVER, ICON_SERVER_INFECTED, ICON_SERVER_ISOLATED } from '../utils/icons'
 
 // ════════════════════════════════════════════════════════════════
 // CytoscapeMap - Visualización de la Topología de Red
+// Ahora con agrupación por sala usando compound nodes (S1, S2, S3...)
 // ════════════════════════════════════════════════════════════════
 
 const props = defineProps({ base: { type: String, default: '/results' } })
@@ -18,10 +23,22 @@ const emit = defineEmits(['ready', 'init'])
 const container = ref(null)  // Referencia DOM para Cytoscape
 let cy = null               // Instancia de Cytoscape
 
+// Extrae el prefijo de sala (ej: "S1PC3" -> "S1") a partir del nombre del nodo.
+// Nodos sin prefijo tipo S# (internet, fw1, sw1, etc.) devuelven null y quedan
+// fuera de cualquier grupo/sala.
+function getSalaId(nombre) {
+  const match = nombre.match(/^S(\d+)/)
+  return match ? `S${match[1]}` : null
+}
+
 function cyStyles() {
   return [
+    // ─────────────────────────────────────────────────────────
+    // Estilo base de los nodos HOJA únicamente (:childless excluye
+    // a los nodos padre/sala, para que no hereden ícono ni forma)
+    // ─────────────────────────────────────────────────────────
     {
-      selector: 'node',
+      selector: 'node:childless',
       style: {
         label: 'data(label)',           // Nombre del nodo debajo del ícono
         'font-size': '40px',
@@ -39,15 +56,15 @@ function cyStyles() {
         'background-image': ICON_PC    // Ícono por defecto
       }
     },
-    
+
     // ─────────────────────────────────────────────────────────
     // Estilos por tipo de nodo (sin infectar)
     // ─────────────────────────────────────────────────────────
-    { selector: 'node[tipo="pc"]', style: { 'background-image': ICON_PC, width: '120px', height: '120px' } },
-    { selector: 'node[tipo="server"]', style: { 'background-image': ICON_SERVER, width: '120px', height: '120px' } },
-    { selector: 'node[tipo="firewall"]', style: { 'background-image': ICON_FIREWALL, width: '120px', height: '120px' } },
-    { selector: 'node[tipo="switch"]', style: { 'background-image': ICON_SWITCH, width: '120px', height: '120px' } },
-    { selector: 'node[tipo="internet"]', style: { 'background-image': ICON_CLOUD, width: '120px', height: '120px' } },
+    { selector: 'node:childless[tipo="pc"]', style: { 'background-image': ICON_PC, width: '120px', height: '120px' } },
+    { selector: 'node:childless[tipo="server"]', style: { 'background-image': ICON_SERVER, width: '120px', height: '120px' } },
+    { selector: 'node:childless[tipo="firewall"]', style: { 'background-image': ICON_FIREWALL, width: '120px', height: '120px' } },
+    { selector: 'node:childless[tipo="switch"]', style: { 'background-image': ICON_SWITCH, width: '120px', height: '120px' } },
+    { selector: 'node:childless[tipo="internet"]', style: { 'background-image': ICON_CLOUD, width: '120px', height: '120px' } },
 
     // ─────────────────────────────────────────────────────────
     // Estados infectados: combina clase .infected + tipo
@@ -66,25 +83,50 @@ function cyStyles() {
     { selector: 'node.isolated[tipo="server"]', style: { 'background-image': ICON_SERVER_ISOLATED } },
 
     // ─────────────────────────────────────────────────────────
+    // Estilo de los nodos "padre" (contenedores de sala) — se
+    // declara al final para que gane sobre cualquier estilo base
+    // ─────────────────────────────────────────────────────────
+    {
+      selector: ':parent',
+      style: {
+        'background-color': '#1e293b',
+        'background-opacity': 0.35,
+        'background-image': 'none',
+        'border-width': 2,
+        'border-color': '#64748b',
+        'border-style': 'dashed',
+        'border-radius': '20px',
+        label: 'data(label)',
+        'font-size': '70px',
+        'font-family': 'monospace',
+        color: '#94a3b8',
+        'text-valign': 'top',
+        'text-halign': 'center',
+        'text-margin-y': '-10px',
+        padding: '40px'
+      }
+    },
+
+    // ─────────────────────────────────────────────────────────
     // Aristas (conexiones entre nodos)
     // ─────────────────────────────────────────────────────────
     {
       selector: 'edge',
       style: {
         width: 3,
-        'line-color': '#f97316',          
+        'line-color': '#f97316',
         'target-arrow-color': '#f97316',
-        'target-arrow-shape': 'triangle',  
-        'curve-style': 'bezier',          
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
         opacity: 0.8,
       },
     },
     {
       selector: 'edge.attack',
       style: {
-        'line-color': '#ef4444',          
+        'line-color': '#ef4444',
         'target-arrow-color': '#ef4444',
-        width: 6,                                  
+        width: 6,
         opacity: 1,
         'line-style': 'solid'
       }
@@ -117,8 +159,30 @@ async function initCytoscape() {
       }
     })
 
+    // ─────────────────────────────────────────────────────────
+    // Detectar salas a partir del prefijo del nombre (S1, S2, S3...)
+    // y crear un nodo "padre" (compound) por cada una
+    // ─────────────────────────────────────────────────────────
+    const salasSet = new Set()
+    nodos.forEach(n => {
+      const salaId = getSalaId(n.nombre)
+      if (salaId) salasSet.add(salaId)
+    })
+
+    const salaParents = Array.from(salasSet).sort().map(sala => ({
+      data: { id: sala, label: sala }
+    }))
+
     const elements = [
-      ...nodos.map(n => ({ data: { id: n.nombre, label: n.nombre, tipo: n.tipo } })),
+      ...salaParents, // los nodos padre deben declararse antes que sus hijos
+      ...nodos.map(n => ({
+        data: {
+          id: n.nombre,
+          label: n.nombre,
+          tipo: n.tipo,
+          parent: getSalaId(n.nombre) || undefined
+        }
+      })),
       ...topo.map(t => ({ data: { id: `${t.origen}-${t.destino}`, source: t.origen, target: t.destino } })),
     ]
 
@@ -128,9 +192,25 @@ async function initCytoscape() {
       container: container.value,
       elements,
       style: cyStyles(),
-      layout: { name: 'breadthfirst', directed: false, padding: 60, spacingFactor: 2.8 },
+      layout: {
+        name: 'fcose',
+        quality: 'proof',
+        padding: 80,
+        nodeSeparation: 90,
+        idealEdgeLength: 120,
+        nodeRepulsion: 6000,
+        // Empuja los nodos agrupados a mantenerse compactos dentro de su sala
+        packComponents: true,
+        animate: false,
+        randomize: true,
+        fit: true
+      },
       userZoomingEnabled: true,
       userPanningEnabled: true
+    })
+
+    cy.ready(() => {
+      cy.fit(undefined, 60)
     })
 
     const internetNodo = nodos.find(n => n.tipo === 'internet')
@@ -152,22 +232,22 @@ async function initCytoscape() {
  */
 function updateNode(nombre, infected, isolated) {
   if (!cy) return
-  
+
   const node = cy.getElementById(nombre)
   if (!node || !node.length) return
-  
+
   // Remover clases previas
   node.removeClass('infected isolated')
-  
+
   if (isolated) {
     node.addClass('isolated')
   } else if (infected) {
     node.addClass('infected')
-    
+
     // Capturar tamaño original
     const baseW = node.numericStyle('width')
     const baseH = node.numericStyle('height')
-    
+
     // Animar: crecer → volver a tamaño original
     node.animate(
       { style: { width: baseW * 1.4, height: baseH * 1.4 } },
@@ -186,12 +266,12 @@ function updateNode(nombre, infected, isolated) {
  */
 function markAttackEdge(desde, nodo) {
   if (!cy || !desde || !nodo) return
-  
+
   const edge = cy.edges().filter(e =>
     ((e.data('source') === desde && e.data('target') === nodo) ||
      (e.data('source') === nodo && e.data('target') === desde))
   )
-  
+
   if (edge.length) edge.addClass('attack')
 }
 

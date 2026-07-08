@@ -30,12 +30,15 @@ global {
 	string log_eventos_path <- "../front/public/results/log_eventos.csv";
 	string log_eventos_hist_path <- "../front/public/results/log_eventos_hist.csv";
 	string log_informes_path <- "../front/public/results/log_informes.csv";
-	int max_ciclos <- 150; // techo también para el experimento manual
 	int ciclo_inicio_infeccion <- -1;
 	int ciclo_fin_contencion <- -1;
 	bool contencion_total <- false;
 	bool informe_guardado <- false;
-
+    int max_ciclos <- 5000;         // techo de seguridad alto
+    int ciclos_sin_cambio <- 0;     // contador de estancamiento
+    int limite_estancamiento <- 100; // si no cambia en 100 ciclos, corta
+    bool estancado <- false;
+    int infectados_anterior <- -1;
 	init {
 		create planta from: planta_file; // creacion del mapa
 		// Configuración automática de los 5 escenarios de tu tabla
@@ -265,8 +268,26 @@ global {
 
 	}
 
+	reflex detectar_estancamiento {
+    if !contencion_total and !estancado {
+        int infectados_actual <- length(computer where (each.infected and !each.is_internet));
+        if infectados_actual = infectados_anterior {
+            ciclos_sin_cambio <- ciclos_sin_cambio + 1;
+        } else {
+            ciclos_sin_cambio <- 0;
+        }
+        infectados_anterior <- infectados_actual;
+
+        if ciclos_sin_cambio >= limite_estancamiento {
+            estancado <- true;
+            write "SIMULACION ESTANCADA - sin cambios en " + limite_estancamiento + " ciclos";
+        }
+    }
+}
+	
+
 	reflex guardar_informe_final {
-		if !informe_guardado and (contencion_total or cycle = max_ciclos) {
+		if !informe_guardado and (contencion_total or estancado or cycle = max_ciclos) {
 			informe_guardado <- true;
 			int total_lan <- length(computer where !each.is_internet);
 			int infectados_lan <- length(computer where (each.infected and !each.is_internet));
@@ -277,7 +298,9 @@ global {
 			save fila_informe to: log_informes_path rewrite: false;
 		}
 
-	} }
+	} 
+
+	}
 
 species planta {
 
@@ -479,7 +502,7 @@ species connection {
 
 }
 
-experiment Infeccion type: gui until: (contencion_total or cycle > max_ciclos) {
+experiment Infeccion type: gui until: (contencion_total or estancado or cycle > max_ciclos) {
 	parameter "Escenario Predefinido (0=Manual)" var: num_escenario among: [0, 1, 2, 3, 4, 5] category: "Escenarios";
 	parameter "Nivel de Contencion (%)" type: float var: containment_threshold min: 0.0 max: 100.0 category: "Seguridad BDI";
 	parameter "Fuerza Firewall (0-1)" type: float var: firewall_strength min: 0.0 max: 1.0 category: "Seguridad BDI";

@@ -18,11 +18,16 @@ global {
 	float firewall_strength <- 0.7;
 	float containment_threshold <- 30.0;
 	bool emergency_containment <- false;
-	int cooldown_min <- 3;
-	int cooldown_max <- 8;
+	int cooldown_min <- 0;
+	int cooldown_max <- 1;
 	float initial_patch_level <- 10.0;
 	string scenario_label <- "Personalizado";
 	int num_escenario <- 0;
+
+	// CAMBIO: probabilidad propia e independiente del comportamiento BDI individual
+	// (auto-aislamiento por creencia de amenaza), NO configurable por el usuario,
+	// separada del containment_threshold que representa la politica central.
+	float agente_autoaislamiento_prob <- 15.0;
 
 	// Rutas exactas conectadas a tu carpeta pública de Vue
 	string log_general_path <- "../front/public/results/log_general.csv";
@@ -34,11 +39,16 @@ global {
 	int ciclo_fin_contencion <- -1;
 	bool contencion_total <- false;
 	bool informe_guardado <- false;
-    int max_ciclos <- 5000;         // techo de seguridad alto
-    int ciclos_sin_cambio <- 0;     // contador de estancamiento
-    int limite_estancamiento <- 100; // si no cambia en 100 ciclos, corta
-    bool estancado <- false;
-    int infectados_anterior <- -1;
+
+	// CAMBIO: techo de ciclos bajado a una ventana de tiempo operativa razonable
+	// (ajusta este valor segun cuanto representa un ciclo en tu conversion a horas)
+	int max_ciclos <- 48;
+
+	int ciclos_sin_cambio <- 0; // contador de estancamiento
+	int limite_estancamiento <- 100; // si no cambia en 100 ciclos, corta
+	bool estancado <- false;
+	int infectados_anterior <- -1;
+
 	init {
 		create planta from: planta_file; // creacion del mapa
 		// Configuración automática de los 5 escenarios de tu tabla
@@ -198,20 +208,28 @@ global {
 		} }
 
 	reflex BDI_global_perception {
-		int total_nodos <- length(computer where !each.is_internet);
-		int total_infectados <- length(computer where (each.infected and !each.is_internet));
-		float tasa <- (total_nodos > 0) ? (float(total_infectados) / float(total_nodos) * 100.0) : 0.0;
-		if tasa >= 80.0 and !emergency_containment {
-			emergency_containment <- true;
-			string fila_alerta <- string(cycle) + ",-,ALERTA_CRITICA,-,-,-," + string(length(computer where each.infected)) + ",-";
-			save fila_alerta to: log_eventos_path rewrite: false;
-			save fila_alerta + "," + scenario_label to: log_eventos_hist_path rewrite: false;
-			ask computer where !each.is_internet {
-				isolated <- true;
-				intention <- "isolated";
-				string fila_emergencia <- string(cycle) + "," + nombre + ",AISLADO_EMERGENCIA,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
-				save fila_emergencia to: log_eventos_path rewrite: false;
-				save fila_emergencia + "," + scenario_label to: log_eventos_hist_path rewrite: false;
+		// CAMBIO: la alerta de emergencia solo aplica cuando hay una politica de
+		// contencion configurada (>0). Si containment_threshold = 0, representa
+		// un escenario "sin ninguna politica central", y por tanto tampoco debe
+		// activarse esta alerta automatica. Asi, "todo en 0" puede terminar
+		// realmente "sin contencion".
+		if containment_threshold > 0 {
+			int total_nodos <- length(computer where !each.is_internet);
+			int total_infectados <- length(computer where (each.infected and !each.is_internet));
+			float tasa <- (total_nodos > 0) ? (float(total_infectados) / float(total_nodos) * 100.0) : 0.0;
+			if tasa >= 80.0 and !emergency_containment {
+				emergency_containment <- true;
+				string fila_alerta <- string(cycle) + ",-,ALERTA_CRITICA,-,-,-," + string(length(computer where each.infected)) + ",-";
+				save fila_alerta to: log_eventos_path rewrite: false;
+				save fila_alerta + "," + scenario_label to: log_eventos_hist_path rewrite: false;
+				ask computer where !each.is_internet {
+					isolated <- true;
+					intention <- "isolated";
+					string fila_emergencia <- string(cycle) + "," + nombre + ",AISLADO_EMERGENCIA,-,-," + string(patch_level) + "," + string(length(computer where each.infected)) + ",isolated";
+					save fila_emergencia to: log_eventos_path rewrite: false;
+					save fila_emergencia + "," + scenario_label to: log_eventos_hist_path rewrite: false;
+				}
+
 			}
 
 		}
@@ -239,19 +257,19 @@ global {
 
 	}
 
-	reflex emergency_check {
-		int infectados <- length(computer where each.infected);
-		int total <- length(computer);
-		if infectados = total and !emergency_containment {
-			emergency_containment <- true;
-			ask computer where !each.is_internet {
-				isolated <- true;
-				intention <- "isolated";
-			}
-
-		}
-
-	}
+reflex emergency_check {
+    if containment_threshold > 0 {
+        int infectados <- length(computer where (each.infected and !each.is_internet));
+        int total <- length(computer where !each.is_internet);
+        if infectados = total and !emergency_containment {
+            emergency_containment <- true;
+            ask computer where !each.is_internet {
+                isolated <- true;
+                intention <- "isolated";
+            }
+        }
+    }
+}
 
 	reflex verificar_contencion_total {
 		if ciclo_inicio_infeccion != -1 and !contencion_total {
@@ -261,7 +279,10 @@ global {
 				contencion_total <- true;
 				ciclo_fin_contencion <- cycle;
 				write "CONTENCION TOTAL";
-				do pause;
+				// CAMBIO: se elimino "do pause;" -> era lo que congelaba
+				// el batch entero y te obligaba a darle play manual
+				// simulacion por simulacion. El "until:" del experimento
+				// ya se encarga de detener cada simulacion individual.
 			}
 
 		}
@@ -269,22 +290,27 @@ global {
 	}
 
 	reflex detectar_estancamiento {
-    if !contencion_total and !estancado {
-        int infectados_actual <- length(computer where (each.infected and !each.is_internet));
-        if infectados_actual = infectados_anterior {
-            ciclos_sin_cambio <- ciclos_sin_cambio + 1;
-        } else {
-            ciclos_sin_cambio <- 0;
-        }
-        infectados_anterior <- infectados_actual;
+		// CAMBIO: el contador de estancamiento solo arranca despues de que
+		// ya hubo una infeccion real (ciclo_inicio_infeccion != -1), para
+		// no confundir "el firewall todavia resiste" con "la simulacion
+		// no avanza".
+		if !contencion_total and !estancado and ciclo_inicio_infeccion != -1 {
+			int infectados_actual <- length(computer where (each.infected and !each.is_internet));
+			if infectados_actual = infectados_anterior {
+				ciclos_sin_cambio <- ciclos_sin_cambio + 1;
+			} else {
+				ciclos_sin_cambio <- 0;
+			}
 
-        if ciclos_sin_cambio >= limite_estancamiento {
-            estancado <- true;
-            write "SIMULACION ESTANCADA - sin cambios en " + limite_estancamiento + " ciclos";
-        }
-    }
-}
-	
+			infectados_anterior <- infectados_actual;
+			if ciclos_sin_cambio >= limite_estancamiento {
+				estancado <- true;
+				write "SIMULACION ESTANCADA - sin cambios en " + limite_estancamiento + " ciclos";
+			}
+
+		}
+
+	}
 
 	reflex guardar_informe_final {
 		if !informe_guardado and (contencion_total or estancado or cycle = max_ciclos) {
@@ -298,9 +324,7 @@ global {
 			save fila_informe to: log_informes_path rewrite: false;
 		}
 
-	} 
-
-	}
+	} }
 
 species planta {
 
@@ -368,7 +392,13 @@ species computer {
 		}
 
 		if des_aislarse and des_sobrevivir and bel_riesgo > 50.0 {
-			if rnd(100) < containment_threshold {
+			// CAMBIO: el auto-aislamiento individual del agente ahora usa
+			// su propia probabilidad intrinseca (agente_autoaislamiento_prob),
+			// independiente de la politica central (containment_threshold).
+			// Esto permite que, incluso con containment_threshold = 0,
+			// el comportamiento emergente BDI siga aportando algo de
+			// resiliencia (tal como plantea tu marco de resultados).
+			if rnd(100) < agente_autoaislamiento_prob {
 				intention <- "isolate";
 				return;
 			}
@@ -439,6 +469,7 @@ species computer {
 		connection c <- one_of(links);
 		computer destino <- (c.source = self) ? c.target : c.source;
 		if destino.is_internet or destino.isolated or destino.infected {
+			write "NO INFECTA -> " + destino.nombre + " internet=" + string(destino.is_internet) + " aislado=" + string(destino.isolated) + " infectado=" + string(destino.infected); //----------------
 			return;
 		}
 
@@ -451,7 +482,9 @@ species computer {
 			p <- p * (1.0 - destino.patch_level / 150.0);
 		}
 
+		write "Intentando infectar " + destino.nombre + " con probabilidad " + p; //----------
 		if flip(p) {
+			write "INFECTADO " + destino.nombre; //------------
 			destino.infected <- true;
 			destino.detected <- false;
 			if world.ciclo_inicio_infeccion = -1 {
@@ -468,29 +501,28 @@ species computer {
 		cooldown <- rnd(cooldown_max) + cooldown_min;
 	}
 
-aspect default {
-    float tam <- 45000.0;
-    if isolated {
-        draw circle(tam) color: #black;
-        draw string(nombre) at: location color: #white font: font("SansSerif", 10, #bold) anchor: #center;
-    } else if infected {
-        draw circle(tam) color: #red;
-    } else if is_firewall {
-        draw square(tam) color: #blue;
-    } else if is_switch {
-        draw square(tam) color: #gray;
-    } else if is_internet {
-        draw circle(tam) color: #yellow;
-    } else if is_server {
-        draw square(tam) color: #purple;
-    } else {
-        draw circle(tam) color: #green;
-    }
-    if !isolated{
-    	 draw string(nombre) at: location color: #black font: font("SansSerif", 8, #bold) anchor: #center;
-    }
-   
-} }
+	aspect default {
+		float tam <- 45000.0;
+		if isolated {
+			draw circle(tam) color: #black;
+			draw string(nombre) at: location color: #white font: font("SansSerif", 10, #bold) anchor: #center;
+		} else if infected {
+			draw circle(tam) color: #red;
+		} else if is_firewall {
+			draw square(tam) color: #blue;
+		} else if is_switch {
+			draw square(tam) color: #gray;
+		} else if is_internet {
+			draw circle(tam) color: #yellow;
+		} else if is_server {
+			draw square(tam) color: #purple;
+		} else {
+			draw circle(tam) color: #green;
+		}
+
+		if !isolated {
+			draw string(nombre) at: location color: #black font: font("SansSerif", 8, #bold) anchor: #center;
+		} } }
 
 species connection {
 	computer source;
@@ -523,6 +555,13 @@ experiment Infeccion type: gui until: (contencion_total or estancado or cycle > 
 
 }
 
-experiment EjecutarEscenariosPredefinidos type: batch repeat: 1 until: (cycle > max_ciclos) {
+experiment EjecutarEscenariosPredefinidos type: batch repeat: 1 until: (contencion_total or estancado or cycle > max_ciclos) {
 	parameter "Escenario" var: num_escenario among: [1, 2, 3, 4, 5];
+}
+
+experiment EjecutarPersonalizado type: batch repeat: 10 parallel: true until: (contencion_total or estancado or cycle > max_ciclos) {
+	parameter "Escenario Predefinido (0=Manual)" var: num_escenario init: 0;
+	parameter "Fuerza Firewall (0-1)" var: firewall_strength init: 0.1;
+	parameter "Nivel de Parche Inicial (%)" var: initial_patch_level init: 5.0;
+	parameter "Nivel de Contencion (%)" var: containment_threshold init: 5.0;
 }

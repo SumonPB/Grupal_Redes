@@ -22,6 +22,7 @@ const emit = defineEmits(['ready', 'init'])
 
 const container = ref(null)  // Referencia DOM para Cytoscape
 let cy = null               // Instancia de Cytoscape
+let userInteracted = false  // true una vez que el usuario hace zoom/pan manual
 
 // Extrae el prefijo de sala (ej: "S1PC3" -> "S1") a partir del nombre del nodo.
 // Nodos sin prefijo tipo S# (internet, fw1, sw1, etc.) devuelven null y quedan
@@ -97,9 +98,10 @@ function cyStyles() {
         'border-style': 'dashed',
         'border-radius': '20px',
         label: 'data(label)',
-        'font-size': '70px',
+        'font-size': '60px',
+        'font-weight': 'bold',
         'font-family': 'monospace',
-        color: '#94a3b8',
+        color: '#e2e8f0',
         'text-valign': 'top',
         'text-halign': 'center',
         'text-margin-y': '-10px',
@@ -220,6 +222,12 @@ async function initCytoscape() {
       if (node && node.length) node.addClass('infected')
     }
 
+    // Una vez el usuario hace zoom o pan manualmente, dejamos de
+    // reencuadrar automáticamente el grafo en cada actualización de datos.
+    cy.on('zoom pan', () => {
+      userInteracted = true
+    })
+
     emit('init', nodoEstado)
     emit('ready')
   } catch (error) {
@@ -278,6 +286,18 @@ function markAttackEdge(desde, nodo) {
 function resizeFit() {
   if (!cy) return
   cy.resize()
+  // Solo reencuadra automáticamente si el usuario todavía no ha hecho
+  // zoom/pan manual — así no le "resetea" la vista en cada nuevo evento.
+  if (!userInteracted) {
+    cy.fit(undefined, 40)
+  }
+}
+
+// Fuerza un reencuadre completo del grafo, ignorando el zoom manual previo
+// (útil por ejemplo con un botón "Reencuadrar" en la interfaz).
+function resetView() {
+  if (!cy) return
+  userInteracted = false
   cy.fit(undefined, 40)
 }
 
@@ -291,7 +311,7 @@ onBeforeUnmount(() => {
 })
 
 // Exponer métodos públicos al padre
-defineExpose({ updateNode, markAttackEdge, resizeFit })
+defineExpose({ updateNode, markAttackEdge, resizeFit, resetView })
 </script>
 
 <style scoped>

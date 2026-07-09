@@ -12,7 +12,8 @@
     "cytoscape-fcose": "^2.2.0",
     "echarts": "^5.5.0",
     "papaparse": "^5.4.1",
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",

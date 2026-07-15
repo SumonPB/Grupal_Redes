@@ -24,9 +24,7 @@ global {
 	string scenario_label <- "Personalizado";
 	int num_escenario <- 0;
 
-	// CAMBIO: probabilidad propia e independiente del comportamiento BDI individual
-	// (auto-aislamiento por creencia de amenaza), NO configurable por el usuario,
-	// separada del containment_threshold que representa la politica central.
+
 	float agente_autoaislamiento_prob <- 15.0;
 
 	// Rutas exactas conectadas a tu carpeta pública de Vue
@@ -38,11 +36,11 @@ global {
 	int ciclo_inicio_infeccion <- -1;
 	int ciclo_fin_contencion <- -1;
 	bool contencion_total <- false;
+	bool infeccion_total <- false;
 	bool informe_guardado <- false;
 
-	// CAMBIO: techo de ciclos bajado a una ventana de tiempo operativa razonable
-	// (ajusta este valor segun cuanto representa un ciclo en tu conversion a horas)
-	int max_ciclos <- 48;
+
+	int max_ciclos <- 500;
 
 	int ciclos_sin_cambio <- 0; // contador de estancamiento
 	int limite_estancamiento <- 100; // si no cambia en 100 ciclos, corta
@@ -208,11 +206,7 @@ global {
 		} }
 
 	reflex BDI_global_perception {
-		// CAMBIO: la alerta de emergencia solo aplica cuando hay una politica de
-		// contencion configurada (>0). Si containment_threshold = 0, representa
-		// un escenario "sin ninguna politica central", y por tanto tampoco debe
-		// activarse esta alerta automatica. Asi, "todo en 0" puede terminar
-		// realmente "sin contencion".
+
 		if containment_threshold > 0 {
 			int total_nodos <- length(computer where !each.is_internet);
 			int total_infectados <- length(computer where (each.infected and !each.is_internet));
@@ -279,21 +273,30 @@ reflex emergency_check {
 				contencion_total <- true;
 				ciclo_fin_contencion <- cycle;
 				write "CONTENCION TOTAL";
-				// CAMBIO: se elimino "do pause;" -> era lo que congelaba
-				// el batch entero y te obligaba a darle play manual
-				// simulacion por simulacion. El "until:" del experimento
-				// ya se encarga de detener cada simulacion individual.
+
 			}
 
 		}
 
 	}
-
+reflex verificar_infeccion_total {
+    if !contencion_total and !infeccion_total {
+        int total_lan <- length(computer where !each.is_internet);
+        int infectados_lan <- length(computer where (each.infected and !each.is_internet));
+        if total_lan > 0 and infectados_lan = total_lan {
+            infeccion_total <- true;
+            // NO seteamos ciclo_fin_contencion aquí -> se queda en -1
+            write "INFECCION TOTAL - toda la red caida en ciclo " + cycle;
+        }
+    }
+}
+reflex detener_simulacion {
+    if !informe_guardado and (contencion_total or infeccion_total or estancado or cycle >= max_ciclos) {
+        do pause;
+    }
+}
 	reflex detectar_estancamiento {
-		// CAMBIO: el contador de estancamiento solo arranca despues de que
-		// ya hubo una infeccion real (ciclo_inicio_infeccion != -1), para
-		// no confundir "el firewall todavia resiste" con "la simulacion
-		// no avanza".
+
 		if !contencion_total and !estancado and ciclo_inicio_infeccion != -1 {
 			int infectados_actual <- length(computer where (each.infected and !each.is_internet));
 			if infectados_actual = infectados_anterior {
@@ -312,19 +315,19 @@ reflex emergency_check {
 
 	}
 
-	reflex guardar_informe_final {
-		if !informe_guardado and (contencion_total or estancado or cycle = max_ciclos) {
-			informe_guardado <- true;
-			int total_lan <- length(computer where !each.is_internet);
-			int infectados_lan <- length(computer where (each.infected and !each.is_internet));
-			int asalvo_lan <- total_lan - infectados_lan;
-			int max_parche <- (total_lan > 0) ? max(computer where !each.is_internet collect each.patch_level) : 0;
-			string
-			fila_informe <- scenario_label + "," + string(max_parche) + "," + string(ciclo_inicio_infeccion) + "," + string(ciclo_fin_contencion) + "," + string(cycle) + "," + string(infectados_lan) + "," + string(asalvo_lan) + "," + string(int(firewall_strength * 100)) + "," + string(int(containment_threshold));
-			save fila_informe to: log_informes_path rewrite: false;
-		}
+reflex guardar_informe_final {
+    if !informe_guardado and (contencion_total or infeccion_total or estancado or cycle >= max_ciclos) {
+        informe_guardado <- true;
+        int total_lan <- length(computer where !each.is_internet);
+        int infectados_lan <- length(computer where (each.infected and !each.is_internet));
+        int asalvo_lan <- total_lan - infectados_lan;
+        int max_parche <- (total_lan > 0) ? max(computer where !each.is_internet collect each.patch_level) : 0;
+        string fila_informe <- scenario_label + "," + string(max_parche) + "," + string(ciclo_inicio_infeccion) + "," + string(ciclo_fin_contencion) + "," + string(cycle) + "," + string(infectados_lan) + "," + string(asalvo_lan) + "," + string(int(firewall_strength * 100)) + "," + string(int(containment_threshold));
+        save fila_informe to: log_informes_path rewrite: false;
+    }
+}
 
-	} }
+ }
 
 species planta {
 
@@ -386,18 +389,16 @@ species computer {
 	}
 
 	reflex BDI_planning {
-		if isolated {
-			intention <- "isolated";
-			return;
-		}
-
+    if isolated {
+        intention <- "isolated";
+        return;
+    }
+    if is_internet {
+        intention <- infected ? "spread" : "normal";
+        return;
+    }
 		if des_aislarse and des_sobrevivir and bel_riesgo > 50.0 {
-			// CAMBIO: el auto-aislamiento individual del agente ahora usa
-			// su propia probabilidad intrinseca (agente_autoaislamiento_prob),
-			// independiente de la politica central (containment_threshold).
-			// Esto permite que, incluso con containment_threshold = 0,
-			// el comportamiento emergente BDI siga aportando algo de
-			// resiliencia (tal como plantea tu marco de resultados).
+
 			if rnd(100) < agente_autoaislamiento_prob {
 				intention <- "isolate";
 				return;
@@ -534,14 +535,14 @@ species connection {
 
 }
 
-experiment Infeccion type: gui until: (contencion_total or estancado or cycle > max_ciclos) {
-	parameter "Escenario Predefinido (0=Manual)" var: num_escenario among: [0, 1, 2, 3, 4, 5] category: "Escenarios";
-	parameter "Nivel de Contencion (%)" type: float var: containment_threshold min: 0.0 max: 100.0 category: "Seguridad BDI";
-	parameter "Fuerza Firewall (0-1)" type: float var: firewall_strength min: 0.0 max: 1.0 category: "Seguridad BDI";
-	parameter "Nivel de Parche Inicial (%)" type: float var: initial_patch_level min: 0.0 max: 100.0 category: "Seguridad BDI";
-	output {
+experiment Infeccion type: gui until: (contencion_total or infeccion_total or estancado or cycle > max_ciclos) {
+    parameter "Escenario Predefinido (0=Manual)" var: num_escenario among: [0, 1, 2, 3, 4, 5] category: "Escenarios";
+    parameter "Nivel de Contencion (%)" type: float var: containment_threshold min: 0.0 max: 100.0 category: "Seguridad BDI";
+    parameter "Fuerza Firewall (0-1)" type: float var: firewall_strength min: 0.0 max: 1.0 category: "Seguridad BDI";
+    parameter "Nivel de Parche Inicial (%)" type: float var: initial_patch_level min: 0.0 max: 100.0 category: "Seguridad BDI";
+    parameter "Prob. Auto-Aislamiento (%)" type: float var: agente_autoaislamiento_prob min: 0.0 max: 100.0 category: "Seguridad BDI";
+    output {
 		display mapa_red {
-		//image "../includes/Topografia.png";
 			species planta;
 			species sala;
 			species connection;
@@ -555,11 +556,11 @@ experiment Infeccion type: gui until: (contencion_total or estancado or cycle > 
 
 }
 
-experiment EjecutarEscenariosPredefinidos type: batch repeat: 1 until: (contencion_total or estancado or cycle > max_ciclos) {
+experiment EjecutarEscenariosPredefinidos type: batch repeat: 1 until: (contencion_total or infeccion_total or estancado or cycle > max_ciclos) {
 	parameter "Escenario" var: num_escenario among: [1, 2, 3, 4, 5];
 }
 
-experiment EjecutarPersonalizado type: batch repeat: 10 parallel: true until: (contencion_total or estancado or cycle > max_ciclos) {
+experiment EjecutarPersonalizado type: batch repeat: 10 parallel: true until: (contencion_total or infeccion_total or estancado or cycle > max_ciclos) {
 	parameter "Escenario Predefinido (0=Manual)" var: num_escenario init: 0;
 	parameter "Fuerza Firewall (0-1)" var: firewall_strength init: 0.1;
 	parameter "Nivel de Parche Inicial (%)" var: initial_patch_level init: 5.0;

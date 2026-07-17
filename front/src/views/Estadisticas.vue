@@ -178,12 +178,19 @@ function tiempoTexto(row) {
   const inicio = parseNumber(row.ciclo_inicio_infeccion)
   const fin = parseNumber(row.ciclo_fin_contencion)
   const cicloFinal = parseNumber(row.ciclo_final)
+  const aSalvo = parseNumber(row.numero_asalvo)
+
   if (inicio === null || inicio < 0) return '-'
-  if (fin !== null && fin >= 0) {
-    return `${fin - inicio}h`
+  
+  // Si no queda nadie a salvo, la simulación falló / colapsó. No hubo contención.
+  // También si explícitamente se guardó un valor negativo de no contención (-1)
+  if (aSalvo === 0 || fin === null || fin < 0) {
+    const delta = (cicloFinal ?? 0) - inicio
+    return `> ${delta}h (sin contener)`
   }
-  const delta = (cicloFinal ?? 0) - inicio
-  return `> ${delta}h (sin contener)`
+
+  // Si queda población a salvo y hay ciclo de fin válido
+  return `${fin - inicio}h`
 }
 
 /**
@@ -231,8 +238,15 @@ function statsFor(rows) {
   const contenidasRows = rows.filter(r => {
     const inicio = parseNumber(r.ciclo_inicio_infeccion)
     const fin = parseNumber(r.ciclo_fin_contencion)
-    return inicio !== null && inicio >= 0 && fin !== null && fin >= 0
+    const aSalvo = parseNumber(r.numero_asalvo)
+    
+    // Una simulación se considera exitosamente contenida si:
+    // 1. Hubo un inicio de infección válido.
+    // 2. Terminó en un ciclo de contención válido (>= 0).
+    // 3. Sobrevivió al menos un nodo sano (a salvo > 0).
+    return inicio !== null && inicio >= 0 && fin !== null && fin >= 0 && aSalvo !== null && aSalvo > 0
   })
+  
   const tiempos = contenidasRows.map(r => parseNumber(r.ciclo_fin_contencion) - parseNumber(r.ciclo_inicio_infeccion))
   const avg = arr => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null)
 
@@ -246,7 +260,6 @@ function statsFor(rows) {
     avgParche: avg(rows.map(r => parseNumber(r.nivel_max_parche)).filter(v => v !== null)),
   }
 }
-
 const statsSeleccion = computed(() => statsFor(filasFiltradas.value))
 
 // Resumen de estadísticas por CADA valor disponible (para el gráfico comparativo)
